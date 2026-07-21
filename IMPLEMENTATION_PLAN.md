@@ -175,7 +175,62 @@ to `brand_members`.
     `realtime-js`, `storage-js`) declare `engines.node >=22`. This is a
     soft npm warning only (install and build both succeed on Node 20); the
     README notes Node 22+ as the recommended runtime for deployment.
-- [ ] Phase 1 — Database & Tenancy
+- [x] Phase 1 — Database & Tenancy
+  - Full Drizzle schema written across `src/db/schema/*.ts` (barrel:
+    `src/db/schema/index.ts`) covering all 32 tables from the brief:
+    `profiles`, `brands`, `brand_members`, `invites`, `stores`, `products`,
+    `brand_documents`, `brand_document_chunks`, `keywords`,
+    `keyword_scores`, `keyword_clusters`, `cluster_keywords`,
+    `competitors`, `competitor_pages`, `gap_reports`, `content_briefs`,
+    `content_pipeline_runs`, `content_pipeline_steps`, `articles`,
+    `article_versions`, `article_claims`, `images`, `schema_objects`,
+    `publications`, `ai_platforms`, `ai_prompts`,
+    `ai_visibility_snapshots`, `recommendations`, `analytics_events`,
+    `subscriptions`, `usage_events`, `jobs` (`invites` was implied by
+    Phase 2's "invites" acceptance criterion, so added here alongside
+    `brand_members` since both are tenancy-join tables).
+  - `drizzle-kit generate` produced `src/db/migrations/0000_..._.sql`
+    (schema) with a hand-added `CREATE EXTENSION IF NOT EXISTS vector;`
+    preamble; `src/db/migrations/0001_rls_policies.sql` (hand-written,
+    Drizzle doesn't model `CREATE POLICY`) adds `is_brand_member()` /
+    `brand_role()` helper functions and enables RLS + a
+    member-of-`brand_id` policy on every tenant table, plus a
+    read-only-for-authenticated policy on the one non-tenant reference
+    table (`ai_platforms`).
+  - `keywords` stores raw inputs AND normalized inputs AND the computed
+    `priority_score`; `keyword_scores` is an append-only scoring-run
+    history with a `formula_version` column. `article_claims` has the
+    exact status/override/audit fields the publish gate (Phase 8) needs.
+  - Migration validation (no live Supabase project, no Docker/psql/sudo in
+    this sandbox — see below): `tests/integration/migration-syntax.test.ts`
+    parses every statement in every migration file with `libpg-query`
+    (real Postgres grammar) to prove syntactic validity, including the
+    `vector(1536)` column and `CREATE EXTENSION vector` statement that
+    pglite itself can't execute. `tests/db/pglite.ts` boots
+    `@electric-sql/pglite` (embedded WASM Postgres, no server required),
+    applies both migrations, and adds a minimal `auth.uid()` shim plus a
+    non-superuser `authenticated` Postgres role (RLS never applies to
+    superusers, so tests must run as a role that actually has RLS
+    enforced against it) to faithfully exercise the real policy SQL.
+  - Acceptance verified:
+    `tests/integration/tenant-isolation.test.ts` (10 tests, all passing)
+    proves brand A's authenticated user cannot SELECT, UPDATE, DELETE, or
+    cross-tenant-INSERT into brand B's `keywords`, `brands`,
+    `brand_members`, `brand_documents`, `competitors`, or `jobs` rows,
+    while brand A's own owner correctly retains full access to brand A's
+    data and the shared `ai_platforms` reference table — using the actual
+    RLS policy SQL, not a re-implementation of the logic in application
+    code. Full details of the pglite/libpg-query approach and its two
+    documented deviations from a real Supabase environment (vector column
+    substitution; explicit non-superuser role) are in `DATABASE.md`.
+  - `npm run typecheck`, `npm run lint`, `npm test` (14/14 passing across
+    3 files), and `npm run build` all pass clean after this phase.
+  - Deviation: without a real Supabase project, `profiles.id → auth.users.id`
+    and the `handle_new_user()` trigger that auto-creates a profile row on
+    signup are NOT in `src/db/migrations/` (the `auth` schema doesn't
+    exist on non-Supabase Postgres, including pglite) — they're documented
+    as a one-time post-`db push` SQL snippet in `DATABASE.md`, to be run
+    once a real Supabase project exists.
 - [ ] Phase 2 — Auth & Multi-tenant Brands
 - [ ] Phase 3 — Onboarding
 - [ ] Phase 4 — Brand Brain
