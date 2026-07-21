@@ -381,8 +381,96 @@ to `brand_members`.
     proves the job row is created correctly).
   - `npm run typecheck`, `npm run lint`, `npm test` (10 files, 74/74
     passing), and `npm run build` all pass clean after this phase.
-- [ ] Phase 4 — Brand Brain
-- [ ] Phase 4 — Brand Brain
+- [x] Phase 4 — Brand Brain
+  - `src/lib/ai/embeddings.ts`: one `embedText()` entry point picks the
+    real OpenAI adapter (`text-embedding-3-small` via a direct `fetch` to
+    `https://api.openai.com/v1/embeddings`, only when `OPENAI_API_KEY` is
+    set) or the deterministic demo adapter, both always returning exactly
+    1536 dimensions. `demoHashEmbedding` uses the standard "hashing trick"
+    (feature hashing): word tokens + character trigrams of the normalized
+    text are each hashed to a dimension index + sign and accumulated,
+    then the vector is L2-normalized. This was NOT the first
+    implementation — an initial per-dimension "rehash the whole document
+    with a different seed per output dimension" approach compiled and
+    looked plausible, but a unit test proved it produced no reliable
+    correlation between shared text and cosine similarity (a real bug,
+    caught by `tests/unit/embeddings.test.ts`'s
+    "gives near-identical text a higher cosine similarity than unrelated
+    text" case). Feature hashing was substituted because shared
+    features hash to the same dimensions in both vectors by construction,
+    which is what makes the demo adapter usable for retrieval at all.
+    Exact method documented in AI_SCORING.md.
+  - `src/lib/brand-brain/chunk.ts`: fixed-size (1000 char) chunking with
+    150-char overlap, preferring to break on whitespace near the boundary
+    rather than mid-word.
+  - `src/lib/brand-brain/extract-text.ts`: TXT/CSV need no real extraction
+    (already text); PDF via `pdf-parse` v2's class-based `PDFParse`/
+    `getText()` API (the package's v1-style default-export API no longer
+    exists in the installed v2.4.5 — discovered and fixed via its
+    shipped `.d.cts` types rather than assuming the old API); DOCX via
+    `mammoth.extractRawText`. `mammoth` ships no TypeScript types and has
+    no `@types/mammoth` package, so `src/types/mammoth.d.ts` declares a
+    minimal ambient type for only the one function this app calls.
+  - `src/lib/brand-brain/process-document.ts`: drives a `brand_documents`
+    row through `pending` → `chunking` → `embedding` → `ready` (or
+    `failed` with the error persisted), chunking the raw text, embedding
+    each chunk, and inserting `brand_document_chunks` rows (clearing any
+    prior chunks first, so re-indexing is idempotent). This is the
+    function the Phase 12 job worker calls for `embed_brand_document`
+    jobs; Phase 3/4's server actions already create real rows in both
+    `brand_documents` and `jobs` — this phase adds the processing logic
+    itself, which a worker will invoke once Phase 12 lands the polling
+    loop.
+  - `src/db/migrations/0002_semantic_search.sql`: `match_brand_document_chunks(brand_id,
+    query_embedding, match_count)` — pgvector cosine-distance top-K query,
+    SECURITY INVOKER so RLS on `brand_document_chunks` still applies to
+    the caller. `src/lib/brand-brain/search.ts` wraps it with `embedText`
+    for a full "query text in, ranked chunks out" function.
+  - `src/lib/brand-brain/actions.ts`: `uploadBrandDocument` (extracts text
+    synchronously so raw_text is always populated; attempts a Supabase
+    Storage upload and DEGRADES GRACEFULLY to a documented local fallback
+    — `storagePath` stays null — if Storage isn't configured, rather than
+    failing the whole upload over an optional artifact), `listBrandDocuments`,
+    `deleteBrandDocument`, `reindexBrandDocument` — all real, editor-role-gated
+    (viewer for list) server actions wired to a real `/brand-brain` page
+    with upload/list/delete/re-index UI, no dead buttons.
+  - Tests added (27 new, 101/101 total passing):
+    - `tests/unit/chunk-text.test.ts` — chunk sizing, overlap (proves
+      adjacent chunks actually share content), sequential indices,
+      whitespace-preferring breaks, degenerate tiny-overlap inputs,
+      documented defaults.
+    - `tests/unit/embeddings.test.ts` — `demoHashEmbedding` dimension
+      count, determinism, case/whitespace normalization, value bounds,
+      empty-string handling, and (the test that caught the real bug
+      above) higher similarity for near-identical vs. unrelated text;
+      `cosineSimilarity` identical/orthogonal/opposite/mismatched-length/
+      zero-vector cases.
+    - `tests/integration/brand-document-chunks.test.ts` — extends the
+      pglite harness (same documented `vector` → `double precision[]`
+      substitution as the existing tenant-isolation tests) to prove
+      chunk rows persist correctly brand-scoped, the document status
+      lifecycle transitions as `process-document.ts` actually drives it,
+      error+failed state recording, and RLS isolation specifically for
+      `brand_document_chunks` (new in this phase).
+    - Added a `vitest.config.ts` test-only alias for the `server-only`
+      marker package (`tests/stubs/server-only.ts`, a no-op): Next.js's
+      bundler aliases `server-only` to a no-op under the `react-server`
+      condition, but Vitest runs in plain Node with no such aliasing, so
+      any test importing a module that (correctly) guards itself with
+      `import "server-only"` would otherwise fail outside Next's build.
+      This is a test-harness-only accommodation; the real guard still
+      applies in `next build`/`next dev`.
+  - Genuinely NOT exercised in this sandbox: the real OpenAI embeddings
+    HTTP call (no `OPENAI_API_KEY`); actual Supabase Storage upload (no
+    live project — the graceful-fallback path is what actually runs
+    here, which is itself now a real, tested code path rather than an
+    unreachable branch); `match_brand_document_chunks`'s pgvector
+    cosine-distance operator end-to-end (pglite has no pgvector — same
+    documented limitation as the `vector(1536)` column since Phase 1;
+    validated for syntax only via the existing `libpg-query` migration
+    test, which auto-discovers the new `0002_semantic_search.sql` file).
+  - `npm run typecheck`, `npm run lint`, `npm test` (13 files, 101/101
+    passing), and `npm run build` all pass clean after this phase.
 - [ ] Phase 5 — Keyword Explorer
 - [ ] Phase 6 — Competitor Radar
 - [ ] Phase 7 — Content Pipeline
