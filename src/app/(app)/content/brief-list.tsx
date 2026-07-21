@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   startPipelineRun,
@@ -111,6 +112,11 @@ export function BriefList({
                         <Button variant="outline" size="sm" onClick={() => onViewSteps(run.id)}>
                           {expandedRun === run.id ? "Hide" : "View"} steps
                         </Button>
+                        {run.articleId && (
+                          <Button asChild size="sm">
+                            <Link href={`/content/${run.articleId}`}>Edit article</Link>
+                          </Button>
+                        )}
                       </div>
                     </div>
 

@@ -653,7 +653,73 @@ to `brand_members`.
     that without changing pipeline internals).
   - `npm run typecheck`, `npm run lint`, `npm test` (20 files, 153/153
     passing), and `npm run build` all pass clean after this phase.
-- [ ] Phase 8 — Content Editor
+- [x] Phase 8 — Content Editor
+  - Editor: `src/app/(app)/content/[articleId]/` — a `contentEditable`-
+    based rich editor (chosen over `@tiptap/react` to avoid a heavy new
+    dependency's integration risk given the remaining phase count; the
+    plan explicitly allows this fallback), with debounced (1.5s)
+    autosave via `autosaveArticleContent`, which creates a NEW
+    `article_versions` row every save (full version history, never
+    overwritten) and recomputes SEO/EEAT/AI-readiness scores from the
+    saved content each time.
+  - `src/lib/content/scoring/article-scores.ts`: deterministic SEO/EEAT/
+    AI-readiness heuristics (0-100 each), precisely documented in the new
+    `AI_SCORING.md` (created this phase, to be extended by Phases 9-10
+    rather than written speculatively ahead of that code). Every
+    sub-score is a simple auditable rule over the article's own HTML/
+    metadata — no LLM judgment call.
+  - `src/lib/content/article-actions.ts`: state machine
+    (`draft → review → approved → published`) with an explicit
+    `ALLOWED_TRANSITIONS` table rejecting invalid jumps (e.g. draft
+    straight to published); `resolveClaim` / `overrideClaim` (owner-only,
+    enforced via `requireRoleOrThrow("owner")`) recording the full audit
+    trail (`resolved_by`/`resolved_at` or `override_by`/
+    `override_reason`/`override_at`); `publishArticle` re-checks the
+    REAL publish gate server-side using the caller's actual role and the
+    article's actual persisted claims (never trusts client-side gate
+    state), requires `status = 'approved'` first, and on success records
+    a `publications` row (`was_override` flag) as the publish audit
+    trail.
+  - `src/lib/content/publish-gate.ts`: the REQUIRED pure `canPublish`
+    function exactly as specified — blocked with unresolved claims;
+    blocked for a non-owner attempting override (checked before the
+    override-recorded flag, so intent doesn't matter); unblocked once
+    every claim is resolved; unblocked via a recorded owner override.
+  - UI: claim highlighting (unresolved=red, overridden=purple/demo,
+    resolved=green backgrounds) with inline resolve/override actions
+    (owner-only override button), JSON-LD preview pane, status-machine
+    buttons matching the allowed transitions, and a publish button that's
+    disabled with the gate's own reason text shown whenever
+    `canPublish` (computed client-side from the same real claims data
+    for instant feedback) says no — the SERVER re-validates independently
+    in `publishArticle`, so the client check is UX-only, not the actual
+    authorization boundary.
+  - Tests added (24 new, 177/177 total passing):
+    - `tests/unit/publish-gate.test.ts` — the REQUIRED suite: blocked
+      with unresolved claims; blocked for non-owner override attempts
+      (including when a non-owner incorrectly claims
+      `overrideRecorded: true`); unblocked after full resolution;
+      unblocked via recorded owner override, including when ALL claims
+      were unresolved; zero-claims trivially allowed; every non-owner
+      role rejected.
+    - `tests/unit/article-scores.test.ts` — SEO/EEAT/AI-readiness scoring
+      behavior (full-marks case, and each individual check's point
+      deduction verified independently).
+    - `tests/integration/publish-gate-persistence.test.ts` — extends the
+      pglite harness to prove the gate's decision against REAL persisted
+      `article_claims` rows (not just in-memory fixtures): blocks with an
+      unresolved row, blocks a non-owner's override attempt, and — the
+      audit-trail requirement — unblocks only after `resolved_by`/
+      `resolved_at` or `override_by`/`override_reason`/`override_at` are
+      actually written and read back from Postgres.
+  - Genuinely NOT exercised in this sandbox: no real LLM-assisted editing
+    suggestions (the editor is a plain contentEditable surface, matching
+    the plan's Tiptap-or-simpler-contentEditable fallback option); no
+    live Supabase session for the `publishArticle`/`autosaveArticleContent`
+    actions' `createClient()`/`requireRole` calls end-to-end (same
+    documented limitation as every prior phase's server actions).
+  - `npm run typecheck`, `npm run lint`, `npm test` (23 files, 177/177
+    passing), and `npm run build` all pass clean after this phase.
 - [ ] Phase 9 — AI Visibility
 - [ ] Phase 10 — Recommendations
 - [ ] Phase 11 — Analytics

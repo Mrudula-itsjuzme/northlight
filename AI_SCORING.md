@@ -1,0 +1,175 @@
+# AI Scoring & Heuristics Methodology
+
+This document precisely describes every scoring/parsing formula and
+heuristic in Northlight, matching the actual implementation in
+`src/lib/**`. It is built up incrementally as each phase lands (see
+`IMPLEMENTATION_PLAN.md`'s status log for what's implemented so far) —
+sections are added as their corresponding code ships, not written ahead of
+the code.
+
+## Keyword priority score (Phase 5)
+
+Implemented in `src/lib/scoring/priority.ts`.
+
+```
+priority = 0.30 * normalizedVolume
+         + 0.25 * (1 - normalizedDifficulty)
+         + 0.20 * commercialIntent
+         + 0.15 * trend
+         + 0.10 * businessValue
+```
+
+- `normalizedVolume` and `normalizedDifficulty` are min-max normalized
+  against the brand's own keyword set: `(value - min) / (max - min)`,
+  clamped implicitly to `[0, 1]` since `value` is always within
+  `[min, max]` by construction. If every keyword in the set has the same
+  raw value (`min === max`), normalization returns `0.5` (a neutral
+  midpoint) rather than dividing by zero.
+- `commercialIntent`, `trend`, and `businessValue` are already expressed
+  on a `[0, 1]` scale as raw inputs — they are qualitative/derived
+  signals, not absolute counts, so no min-max normalization is applied to
+  them.
+- The weights sum to exactly `1.0`.
+
+### Worked example
+
+Three keywords, volume range `[1000, 5000]`, difficulty range `[20, 60]`:
+
+| Keyword | rawVolume | rawDifficulty | commercialIntent | trend | businessValue | normalizedVolume | normalizedDifficulty | priorityScore |
+|---|---|---|---|---|---|---|---|---|
+| A | 1000 | 20 | 0.8 | 0.5 | 0.9 | 0.0 | 0.0 | **0.575** |
+| B | 5000 | 60 | 0.3 | 0.2 | 0.4 | 1.0 | 1.0 | **0.430** |
+| C | 3000 | 40 | 0.6 | 0.7 | 0.6 | 0.5 | 0.5 | **0.560** |
+
+Keyword A: `0.30*0 + 0.25*(1-0) + 0.20*0.8 + 0.15*0.5 + 0.10*0.9`
+`= 0 + 0.25 + 0.16 + 0.075 + 0.09 = 0.575`
+
+Keyword B: `0.30*1 + 0.25*(1-1) + 0.20*0.3 + 0.15*0.2 + 0.10*0.4`
+`= 0.30 + 0 + 0.06 + 0.03 + 0.04 = 0.43`
+
+Keyword C: `0.30*0.5 + 0.25*0.5 + 0.20*0.6 + 0.15*0.7 + 0.10*0.6`
+`= 0.15 + 0.125 + 0.12 + 0.105 + 0.06 = 0.56`
+
+This exact fixture (asserted to 10 decimal places) lives in
+`tests/unit/priority-scoring.test.ts`.
+
+`keyword_scores` is an append-only history table (`formula_version`
+column) — re-scoring never overwrites prior computed values, since the
+normalization baseline shifts whenever the brand's keyword set changes.
+
+## Keyword clustering (Phase 5)
+
+Implemented in `src/lib/scoring/cluster.ts`. No ML model or embedding
+call — deterministic greedy single-link clustering on Jaccard similarity
+of each keyword's "significant tokens" (lowercased, non-alphanumeric
+split, stopwords removed, length > 2). A keyword joins the first existing
+cluster whose token set has Jaccard similarity `>= 0.2` (default
+threshold) with it; otherwise it starts a new cluster. A cluster's name is
+its longest member term.
+
+## Demo embedding adapter (Phase 4)
+
+Implemented in `src/lib/ai/embeddings.ts`'s `demoHashEmbedding`, used only
+when `OPENAI_API_KEY` is not configured (the real adapter calls OpenAI's
+`text-embedding-3-small` otherwise). NOT a real semantic embedding.
+
+Method — the standard "hashing trick" (feature hashing) for bag-of-
+features vectors:
+
+1. Normalize the text (lowercase, collapse whitespace).
+2. Extract features: every whitespace-delimited word token, plus every
+   character trigram (3-character sliding window) of the padded text.
+3. For each feature string, compute two independent FNV-1a hashes: one to
+   pick a dimension index in `[0, 1536)`, one to pick a sign (`+1`/`-1`).
+4. Accumulate the sign into that dimension for every occurrence of that
+   feature across the whole text.
+5. L2-normalize the resulting 1536-dimension vector.
+
+Because two texts sharing a feature always hash that feature to the same
+dimension with the same sign, texts with more lexical overlap reliably
+produce a higher cosine similarity than unrelated texts — this property
+is asserted directly in `tests/unit/embeddings.test.ts`. (An earlier
+implementation attempt re-hashed the entire document per output dimension
+with only the dimension index as a seed; a test proved that approach
+produced no reliable similarity correlation, so it was replaced with the
+method described here before it shipped.)
+
+## Competitor gap analysis (Phase 6)
+
+Implemented in `src/lib/competitors/gap-analysis.ts`. A deterministic,
+non-LLM demo adapter — NOT a live crawl or model call. Seeded by
+`brandId:competitorId:type` via FNV-1a, so the same brand/competitor/type
+combination always produces the same findings and priority score (no
+randomness between runs). Draws 2-4 findings from a fixed topic pool per
+gap type (content/schema/faq/backlink/ai_citation), assigns each a
+severity (low/medium/high, also seeded), and computes `priorityScore` as
+the mean of severity weights (`low=0.2, medium=0.5, high=0.9`), rounded to
+3 decimal places. The `ai_citation` type's descriptions always include an
+explicit "this is a directional signal only, not an official citation
+count" disclaimer.
+
+## Content pipeline stages (Phase 7)
+
+Implemented in `src/lib/content/pipeline/stages.ts`. All 8 stages
+(Research, Strategy, Outline, Writer, Editor, SEO Optimizer, Fact Check,
+Schema Generator) are deterministic, non-LLM functions — per the app's
+constraint against calling a real external API without a credential, and
+to keep pipeline runs fully exercisable/testable in a sandbox with no
+OpenAI key. Each stage does real structured work from its typed input
+(keyword-pattern-based content-type classification, outline-driven HTML
+generation, whitespace-normalizing edits, meta-length-constrained SEO
+fields, and a genuine fact-check heuristic checking whether each research
+claim still appears in the final body) rather than fabricating output —
+see `stages.ts`'s module doc comment for the full rationale.
+
+## Article SEO / EEAT / AI-readiness scores (Phase 8)
+
+Implemented in `src/lib/content/scoring/article-scores.ts`. All three
+scores are 0-100, computed from simple auditable rules over the
+article's own HTML/metadata — not an LLM judgment call, so the same
+input always produces the same score.
+
+**SEO score** — 5 checks, 20 points each:
+1. Meta title present and ≤ 60 characters.
+2. Meta description present and ≤ 155 characters.
+3. Primary keyword appears in the meta title.
+4. Primary keyword appears at least once in the body text.
+5. Body contains at least one `<h2>` heading.
+
+**EEAT score** (Experience/Expertise/Authoritativeness/Trust) — 4 checks,
+25 points each:
+1. Body word count ≥ 300.
+2. Body contains a "why"/"how"/"what" pattern (explanatory structure
+   signal).
+3. Zero unresolved claims.
+4. No claims recorded at all, OR zero unresolved claims (redundant with
+   check 3 at the whole-article level, rewarding "fact-checked and
+   clean" articles at full weight).
+
+**AI-readiness score** (directional heuristic for how well-structured
+content is for generative-AI extraction — never a guarantee of actual AI
+citation; see the AI Visibility methodology once Phase 9 lands) — 4
+checks, 25 points each:
+1. Valid JSON-LD schema present.
+2. Body contains an FAQ-style heading.
+3. Body has at least 2 `<h2>`/`<h3>` headings.
+4. Meta description is present.
+
+## Publish gate (Phase 8)
+
+Implemented in `src/lib/content/publish-gate.ts`'s pure `canPublish`
+function: publish is allowed iff there are zero `unresolved`
+`article_claims` rows, OR the caller is an `owner` AND an override has
+actually been recorded (`overrideRecorded === true`, meaning the caller
+already wrote the `article_claims.status = 'overridden'` audit row with
+`override_by`/`override_reason`/`override_at` populated). A non-owner can
+never use the override path regardless of intent. Exhaustively tested in
+`tests/unit/publish-gate.test.ts` (blocked/unblocked/non-owner-override/
+owner-override/audit-field scenarios) and proven against real persisted
+`article_claims` rows in `tests/integration/publish-gate-persistence.test.ts`.
+
+---
+
+*Sections for AI Visibility parsing (Phase 9) and Recommendation ranking
+(Phase 10) will be added here as those phases land, finalized in Phase
+15.*
