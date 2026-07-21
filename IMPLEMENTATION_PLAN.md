@@ -586,7 +586,73 @@ to `brand_members`.
     phase calls out to the network to fetch competitor URLs).
   - `npm run typecheck`, `npm run lint`, `npm test` (18 files, 134/134
     passing), and `npm run build` all pass clean after this phase.
-- [ ] Phase 7 — Content Pipeline
+- [x] Phase 7 — Content Pipeline
+  - `src/lib/content/pipeline/schemas.ts`: typed Zod in/out contracts for
+    all 8 stages (Research → Strategy → Outline → Writer → Editor → SEO
+    Optimizer → Fact Check → Schema Generator), each stage's input built
+    from the prior stage's already-persisted output — this explicit
+    typing (rather than passing a loosely-typed shared context object) is
+    what makes a stage genuinely retryable in isolation.
+  - `src/lib/content/pipeline/stages.ts`: one pure function per stage.
+    Per the plan's constraint against calling a real external API without
+    a credential, and to keep a full pipeline run exercisable/testable in
+    this sandbox, every stage is a deterministic, non-LLM "demo adapter"
+    that still does real structured work from its typed input (keyword-
+    aware research facts, content-type classification from keyword
+    patterns, outline/HTML generation matching the outline, whitespace-
+    normalizing editing pass, meta-title/description/slug generation
+    respecting length constraints, a genuine fact-check heuristic that
+    checks whether each research claim still appears in the final body).
+    Every stage's `usedDemoAdapter: true` result field reflects this
+    honestly rather than presenting deterministic output as AI-generated.
+  - `src/lib/content/pipeline/runner.ts`: `runPipeline(runId)` drives a
+    `content_pipeline_runs` row through all 8 stages in order, persisting
+    each stage's input/output/status/cost/tokens as its own
+    `content_pipeline_steps` row. Before running a stage it checks for an
+    existing COMPLETED step and reuses its output instead of rerunning —
+    this is the retry mechanism: `retryPipelineStage(runId, stage)`
+    deletes only that stage's (failed) step row and re-invokes
+    `runPipeline`, which then skips every already-completed prior stage.
+    On full completion, persists a real `articles` + `article_versions`
+    row (status `draft`) from the SEO-optimized output.
+  - `src/lib/content/brief.ts`: `generateContentBrief` builds a
+    `content_briefs` row with every required field (primary keyword via
+    `title`, target audience, search intent derived from the keyword's
+    own commercial-intent score, outline, required-sections checklist
+    covering supporting keywords/entities/FAQs/internal links/external
+    sources/product placements/EEAT — all listed explicitly rather than
+    silently omitted).
+  - `src/lib/content/actions.ts`: `createBriefForKeyword`,
+    `listContentBriefs`, `startPipelineRun` (creates the run row then
+    calls `runPipeline` — synchronous in this MVP; Phase 12's
+    `run_content_pipeline` job type will move this behind the worker
+    without changing the pipeline logic itself), `retryFailedStage`,
+    `listPipelineRuns`, `listPipelineSteps`. Wired to a real `/content`
+    page: generate a brief from any existing keyword, start a run, expand
+    a run to see every step's status/attempt/cost/tokens, retry a failed
+    step in place — no dead buttons.
+  - Tests added (19 new, 153/153 total passing):
+    - `tests/unit/pipeline-stages.test.ts` — every stage's output validated
+      against its own Zod schema, plus behavior assertions (content-type
+      classification from keyword patterns, outline headings appearing in
+      the writer's HTML, whitespace normalization, meta length limits,
+      slug format, the fact-check heuristic correctly flagging an
+      unsupported long claim, valid JSON-LD shape).
+    - `tests/integration/content-pipeline.test.ts` — extends the pglite
+      harness to prove one `content_pipeline_steps` row persists per
+      stage, an `articles`+`article_versions` row is created from the
+      final output, retrying a failed stage does NOT rerun or duplicate
+      already-completed prior stages (the core retryability guarantee),
+      and RLS isolates pipeline runs/steps/briefs between brands.
+  - Genuinely NOT exercised in this sandbox: no real LLM-generated content
+    anywhere in the pipeline (by design per the plan's external-API
+    constraint — every stage is the demo adapter described above); the
+    `run_content_pipeline` job type exists in the schema/enum but nothing
+    yet enqueues or drains it, since this phase's `startPipelineRun` calls
+    the runner directly rather than through the job queue (Phase 12 wires
+    that without changing pipeline internals).
+  - `npm run typecheck`, `npm run lint`, `npm test` (20 files, 153/153
+    passing), and `npm run build` all pass clean after this phase.
 - [ ] Phase 8 — Content Editor
 - [ ] Phase 9 — AI Visibility
 - [ ] Phase 10 — Recommendations
