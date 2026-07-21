@@ -168,8 +168,49 @@ never use the override path regardless of intent. Exhaustively tested in
 owner-override/audit-field scenarios) and proven against real persisted
 `article_claims` rows in `tests/integration/publish-gate-persistence.test.ts`.
 
----
+## AI Visibility parsing methodology (Phase 9)
 
-*Sections for AI Visibility parsing (Phase 9) and Recommendation ranking
-(Phase 10) will be added here as those phases land, finalized in Phase
-15.*
+Implemented in `src/lib/ai/visibility/parse.ts`'s `parseVisibilityResponse`,
+shared identically by the demo adapter (`demo-adapter.ts`) and the one
+real adapter (`openai-adapter.ts`, ChatGPT only, used only when
+`OPENAI_API_KEY` is configured — every other platform is always demo,
+per the plan's single-provider constraint).
+
+**IMPORTANT — directional only, never an official citation count.**
+Every value below reflects this app's own text-parsing heuristic applied
+to one response at one point in time. It is not sourced from any
+platform's official API for citations/mentions (no such API is used or
+exists for most of these platforms), it is not a guarantee of future
+behavior, and a "position" is only ever relative to a single response's
+own ordering, not a ranking against the real world. The UI states this
+explicitly wherever visibility data is shown.
+
+Given raw response text and a brand name:
+
+1. **Mentioned**: word-boundary (not naive substring) case-insensitive
+   match of the brand name in the response text. Word-boundary matching
+   is required — an earlier naive `indexOf` implementation incorrectly
+   matched "Curl Co" inside unrelated text like "Silkcurl Co", a bug
+   caught by `tests/unit/visibility-parse.test.ts` before it shipped and
+   fixed by anchoring the match on non-alphanumeric boundaries.
+2. **Position**: if not mentioned, `null`. If mentioned, look for the
+   nearest preceding numbered-list marker (`N.` or `N)`) before the
+   mention and use that number; if none is found (e.g. the brand is
+   mentioned in prose, not a list), `null`.
+3. **Sentiment**: scan a ±100-character window around the mention for a
+   fixed list of positive words (best, excellent, great, top,
+   recommended, trusted, favorite, loved, outstanding) and negative words
+   (worst, avoid, poor, disappointing, overpriced, unreliable,
+   complaints). More positive hits → `positive`; more negative hits →
+   `negative`; equal (including zero-zero) → `neutral`. Not mentioned →
+   `unknown`.
+4. **Confidence** (0-1, the PARSER's own extraction confidence, not the
+   platform's): starts at 0.5 when mentioned; +0.25 if a list position
+   was found; +0.25 if sentiment word hits were non-tied (a clear
+   positive or negative signal, not silence or a tie), capped at 1.0. A
+   clean non-mention (no ambiguity about absence) is reported at a fixed
+   0.9 confidence.
+
+## Recommendation ranking (Phase 10)
+
+*To be added when Phase 10 lands.*

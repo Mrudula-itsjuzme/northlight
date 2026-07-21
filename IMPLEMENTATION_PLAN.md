@@ -720,7 +720,63 @@ to `brand_members`.
     documented limitation as every prior phase's server actions).
   - `npm run typecheck`, `npm run lint`, `npm test` (23 files, 177/177
     passing), and `npm run build` all pass clean after this phase.
-- [ ] Phase 9 — AI Visibility
+- [x] Phase 9 — AI Visibility
+  - `src/lib/ai/visibility/adapter.ts`: the `VisibilityAdapter` interface
+    (platform, isDemo, `check(prompt, brandName)`) every adapter — demo
+    or real — implements identically, covering all 6 required platforms
+    (chatgpt/claude/gemini/perplexity/copilot/ai_overviews).
+  - `src/lib/ai/visibility/parse.ts`: `parseVisibilityResponse` — the
+    shared parsing logic (mentioned/position/sentiment/confidence) used
+    by BOTH the demo adapter and the real OpenAI adapter, so it's tested
+    once and trusted everywhere. Caught and fixed a real bug before
+    shipping: the first version used a naive `indexOf` substring match,
+    which incorrectly reported a mention of "Curl Co" inside unrelated
+    text like "Silkcurl Co" — `tests/unit/visibility-parse.test.ts`'s
+    very first test case failed against this, and the fix (word-boundary
+    matching via a lookaround regex) is now what's shipped.
+  - `src/lib/ai/visibility/demo-adapter.ts`: deterministic (FNV-1a
+    seeded by platform+prompt+brand) demo response generation for all 6
+    platforms, piped through the same real parser above — every
+    persisted row sets `is_demo=true`.
+  - `src/lib/ai/visibility/openai-adapter.ts`: the one real adapter,
+    ChatGPT only, calling OpenAI's Chat Completions API — constructed
+    ONLY when `OPENAI_API_KEY` is configured (`registry.ts`'s
+    `getVisibilityAdapter`); every other platform remains demo-only
+    regardless of any key, per the plan's single-provider constraint.
+  - `src/lib/ai/visibility/actions.ts`: `ai_prompts` CRUD
+    (`createAiPrompt`/`deleteAiPrompt` — soft-delete via `isActive`/
+    `listAiPrompts`), `runVisibilitySnapshot` (runs every platform's
+    adapter for one prompt, persists one `ai_visibility_snapshots` row
+    per platform, lazily seeds the `ai_platforms` reference rows
+    including the correct `has_live_adapter` flag), `listVisibilitySnapshots`.
+    Wired to a real `/visibility` page: add/remove prompts, run a
+    snapshot, see per-platform mention/position/sentiment/confidence with
+    a "Demo" badge — the page's own methodology copy states results are
+    directional only and never an official citation count, matching the
+    plan's explicit requirement.
+  - Tests added (17 new, 194/194 total passing):
+    - `tests/unit/visibility-parse.test.ts` — fixture LLM-response text
+      in, expected mention/position/sentiment/confidence out, including
+      the word-boundary bug fixed above, case-insensitivity, prose-vs-list
+      mentions, and confidence bounds/ordering.
+    - `tests/unit/visibility-demo-adapter.test.ts` — determinism, per-
+      platform demo labeling, confidence bounds, and position bounds
+      across all 6 platforms.
+    - `tests/integration/ai-visibility.test.ts` — extends the pglite
+      harness to prove a snapshot run persists one row per platform
+      (all `is_demo=true`), and RLS isolates `ai_prompts`/
+      `ai_visibility_snapshots` between brands while the shared
+      `ai_platforms` reference table stays visible to any authenticated
+      member (consistent with Phase 1's existing coverage of that table).
+  - Added the AI Visibility parsing methodology section to `AI_SCORING.md`,
+    explicitly restating the directional-only/never-an-official-count
+    requirement.
+  - Genuinely NOT exercised in this sandbox: the real OpenAI Chat
+    Completions call in `openai-adapter.ts` (no `OPENAI_API_KEY`
+    configured) — its request/response handling is written against the
+    real API shape but has never executed against the live endpoint.
+  - `npm run typecheck`, `npm run lint`, `npm test` (26 files, 194/194
+    passing), and `npm run build` all pass clean after this phase.
 - [ ] Phase 10 — Recommendations
 - [ ] Phase 11 — Analytics
 - [ ] Phase 12 — Jobs/Usage/Error States
