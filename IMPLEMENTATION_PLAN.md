@@ -320,7 +320,68 @@ to `brand_members`.
     is proven against a real Postgres engine with real RLS policies loaded.
   - `npm run typecheck`, `npm run lint`, `npm test` (7 files, 49/49
     passing), and `npm run build` all pass clean after this phase.
-- [ ] Phase 3 — Onboarding
+- [x] Phase 3 — Onboarding
+  - `src/lib/onboarding/state.ts`'s `getOnboardingState(brandId)` derives
+    the current wizard step directly from persisted rows (store exists?
+    product exists? every brand document `ready`/`failed`? keyword
+    exists?) rather than a separate mutable "current step" field — so a
+    reload mid-wizard always resumes correctly, since the presence of real
+    data IS the progress, not a cache of it. Steps: `brand` (no brand yet,
+    handled by reusing Phase 2's `CreateBrandForm`) → `store` → `products`
+    → `documents` → `brand-brain` → `keywords` → `done` (redirects to
+    `/dashboard`).
+  - `src/lib/onboarding/actions.ts`: `addStore`, `addProduct`,
+    `importProductsCsv`, `addBrandDocumentText`, `skipBrandDocuments`,
+    `seedDemoKeywords` — all real server actions (editor-role-gated via
+    `requireRoleOrThrow`, same pattern as Phase 2), no client-only mocked
+    state. `addBrandDocumentText` inserts the `brand_documents` row AND
+    enqueues a real `embed_brand_document` row in `jobs` inside one
+    transaction — the worker that actually processes that job (chunking +
+    embeddings) is Phase 4/12's job, but the row + job creation here is
+    real, not a stub; until a worker runs, the document's status stays
+    `pending`, which is an honest state rather than a fake "indexed" flag.
+  - `src/lib/csv/parse-products.ts` + `src/lib/validation/products.ts`:
+    CSV product import via `papaparse` (added as a dependency), validating
+    every row against `productSchema` and reporting bad rows individually
+    (row number + specific reasons) instead of silently dropping them —
+    valid rows still import even when other rows in the same file fail.
+    `parseProductCsvRow` converts a human-entered dollar string (e.g.
+    "19.99") to integer cents, tolerating blank/non-numeric price cells
+    without crashing the whole row.
+  - Wizard UI: `src/app/onboarding/page.tsx` (server component, derives
+    step + redirects to `/dashboard` once done) renders
+    `onboarding-wizard.tsx` (progress bar + step switch) and one client
+    step component per step under `src/app/onboarding/steps/` — every
+    submit button calls one of the real server actions above; the
+    Brand-Brain step is a confirmation screen (real queuing already
+    happened when the document was added, not a second fake trigger); the
+    products step supports both a manual add form and CSV file upload,
+    showing per-row CSV errors inline.
+  - Tests added (25 new, 74/74 total passing):
+    - `tests/unit/validation-products.test.ts` — `productSchema`,
+      `storeSchema`, `brandDocumentTextSchema`, and `parseProductCsvRow`
+      (dollar-to-cents conversion, blank/non-numeric price handling,
+      invalid URL rejection).
+    - `tests/unit/csv-parse-products.test.ts` — `parseProductsCsv` against
+      real CSV text: valid rows, bad rows reported with row number +
+      reason while valid rows in the same file still import, header
+      casing/whitespace tolerance, empty-body CSVs.
+    - `tests/integration/onboarding-state.test.ts` — extends the pglite
+      harness to prove step derivation against the real schema: starts at
+      `store` for a brand-new brand, advances through each step as the
+      corresponding real rows are inserted, stays at `brand-brain` while a
+      document is still `pending`, and — the core acceptance criterion —
+      re-derives the identical step from a fresh read with no client state
+      carried over, proving a reload mid-wizard cannot lose progress.
+  - Genuinely NOT exercised in this sandbox: actual file upload to
+    Supabase Storage (PDF/DOCX/binary TXT/CSV upload is explicitly Phase
+    4's scope; this phase's document step only covers the `typed_text`
+    source, which is real end-to-end) and the `embed_brand_document`
+    job's worker execution (Phase 4/12 builds the worker; this phase only
+    proves the job row is created correctly).
+  - `npm run typecheck`, `npm run lint`, `npm test` (10 files, 74/74
+    passing), and `npm run build` all pass clean after this phase.
+- [ ] Phase 4 — Brand Brain
 - [ ] Phase 4 — Brand Brain
 - [ ] Phase 5 — Keyword Explorer
 - [ ] Phase 6 — Competitor Radar
