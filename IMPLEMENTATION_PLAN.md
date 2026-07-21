@@ -537,8 +537,55 @@ to `brand_members`.
     inspecting its `type`/`payload`, but nothing drains the queue yet.
   - `npm run typecheck`, `npm run lint`, `npm test` (16 files, 123/123
     passing), and `npm run build` all pass clean after this phase.
-- [ ] Phase 6 — Competitor Radar
-- [ ] Phase 6 — Competitor Radar
+- [x] Phase 6 — Competitor Radar
+  - `src/lib/competitors/gap-analysis.ts`: deterministic demo analysis
+    adapter, seeded by `brandId:competitorId:type` (FNV-1a based, same
+    seeding technique as the Phase 4 demo embedding adapter) — the SAME
+    brand/competitor/type always produces the SAME findings and priority
+    score, so re-running "Generate gap reports" doesn't silently change
+    answers like a flaky mock would. Produces 2-4 findings per report
+    across all 5 required gap types (content/schema/faq/backlink/
+    ai_citation), each with a severity and a priority score derived from
+    the findings' average severity. The `ai_citation` type's descriptions
+    explicitly state "this is a directional signal only, not an official
+    citation count" — matching the plan's requirement that AI-citation
+    signals never be presented as an official count, anywhere in the app.
+  - `src/lib/competitors/actions.ts`: competitor CRUD, competitor-page
+    tracking, `listGapReports`, and `generateGapReportsForCompetitor` —
+    which calls the demo adapter for all 5 types and persists real
+    `gap_reports` rows (`is_demo=true`, `generated_by='demo_adapter'`).
+    All editor-gated (viewer for read-only listing) via
+    `requireRoleOrThrow`. Wired to a real `/competitors` page: add
+    competitor, generate/view gap reports per competitor (findings
+    rendered with severity + a "Demo" badge), delete — no dead buttons.
+  - Caught one bug in my own test before it could mask a real
+    documentation gap: an early version of
+    `tests/unit/gap-analysis.test.ts` asserted the `ai_citation`
+    description text should NOT match `/official citation count/` — but
+    the actual (correct) copy is "not an official citation count", which
+    DOES contain that substring as part of the negation. The naive regex
+    would have failed on correct code, which risked getting "fixed" by
+    weakening the disclaimer copy instead of the test. Corrected the test
+    to assert the disclaimer phrase is present AND that the positive claim
+    never appears without the preceding negation (a lookbehind regex),
+    which actually verifies the intended property.
+  - Tests added (11 new, 134/134 total passing):
+    - `tests/unit/gap-analysis.test.ts` — determinism (same seed same
+      output), variation across different brands/competitors, finding
+      count bounds, priority score bounds, all 5 types covered, no
+      duplicate findings within one report, valid severities, and the
+      directional-only-language assertion described above.
+    - `tests/integration/gap-reports.test.ts` — extends the pglite harness
+      to prove all 5 gap report types persist as correctly brand+
+      competitor-scoped rows with `is_demo`/`generated_by` set correctly,
+      and RLS isolates `gap_reports` (and `competitors`) between brands.
+  - Genuinely NOT exercised in this sandbox: no live competitor-page
+    crawling (the plan's demo adapter is explicitly analysis-over-stored-
+    data, not a real fetch; `competitor_pages.content_snapshot` exists in
+    the schema for a future real crawler to populate, but nothing in this
+    phase calls out to the network to fetch competitor URLs).
+  - `npm run typecheck`, `npm run lint`, `npm test` (18 files, 134/134
+    passing), and `npm run build` all pass clean after this phase.
 - [ ] Phase 7 — Content Pipeline
 - [ ] Phase 8 — Content Editor
 - [ ] Phase 9 — AI Visibility
