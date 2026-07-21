@@ -231,7 +231,95 @@ to `brand_members`.
     exist on non-Supabase Postgres, including pglite) — they're documented
     as a one-time post-`db push` SQL snippet in `DATABASE.md`, to be run
     once a real Supabase project exists.
-- [ ] Phase 2 — Auth & Multi-tenant Brands
+- [x] Phase 2 — Auth & Multi-tenant Brands
+  - Auth server actions in `src/lib/auth/actions.ts` (`signup`, `login`,
+    `logout`, `requestPasswordReset`, `updatePassword`, `updateProfile`) all
+    call the real Supabase Auth API (`supabase.auth.signUp` /
+    `signInWithPassword` / `signOut` / `resetPasswordForEmail` /
+    `updateUser`) via `src/lib/supabase/server.ts`'s cookie-based client —
+    no placeholders. If Supabase env vars are missing, `createClient()`
+    throws a clear, visible error (existing Phase 0 behavior) rather than
+    silently no-opping.
+  - `src/app/api/auth/callback/route.ts` handles Supabase's
+    confirmation/magic-link/recovery redirect via
+    `exchangeCodeForSession(code)`, redirecting to `next` (defaults to
+    `/onboarding`) on success or back to `/login` with a visible error.
+  - Auth pages under `src/app/(auth)/{login,signup,reset-password,
+    reset-password/confirm}` use React Hook Form + `zodResolver` bound to
+    the existing Phase 2 validation schemas (`src/lib/validation/auth.ts`),
+    submitting to the real server actions above — every submit button is
+    wired to a real code path, none are dead/mocked.
+  - Brand domain: `src/lib/brands/actions.ts` (`createBrand`,
+    `listBrandsForUser`, `switchActiveBrand`/`getActiveBrandId` — cookie
+    `nl_current_brand` — `inviteMember`, `acceptInvite`, `revokeInvite`,
+    `updateMemberRole`, `removeMember`). `createBrand` inserts `brands` +
+    `brand_members` (role `owner`) inside a single Drizzle
+    `db.transaction()` — both succeed or both roll back, verified in
+    `tests/integration/brand-membership.test.ts`. Shared types
+    (`ActionResult`, `BrandListItem`, `CURRENT_BRAND_COOKIE`) live in
+    `src/lib/brands/types.ts` because a `"use server"` file may only export
+    async functions — re-exporting a `const` or interface from it fails the
+    Next.js build (`next build` initially caught this; fixed by extracting
+    to a plain module).
+  - `src/lib/brands/require-role.ts` — `requireRole`/`requireRoleOrThrow`
+    read the caller's `brand_members.role` via Drizzle (not the Supabase JS
+    client) and check it with `roleAtLeast` from the Phase 2 validation
+    module. Used inside `inviteMember`/`updateMemberRole`/`removeMember`/
+    `revokeInvite` so these are gated in the application layer, not just by
+    RLS (RLS enforces the brand boundary only; role-within-a-brand gating
+    is intentionally app-layer per DATABASE.md's existing note). Added the
+    `server-only` package as a dependency to enforce this module can never
+    enter a client bundle.
+  - `src/components/brands/brand-switcher.tsx` (Radix dropdown, lists
+    brands + calls `switchActiveBrand`) and dashboard shell
+    `src/app/(app)/layout.tsx` (sidebar nav via
+    `src/components/layout/sidebar-nav.tsx`, user menu with real `logout()`
+    form action via `src/components/layout/user-menu.tsx`) — redirects to
+    `/login` if unauthenticated, `/onboarding` if the user has zero brands.
+  - Added small UI primitives needed for real forms that didn't exist yet:
+    `src/components/ui/{input,label,card}.tsx`, following the existing
+    hand-authored shadcn/ui pattern from Phase 0 (no `npx shadcn add` run,
+    consistent with the Phase 0 deviation note).
+  - A placeholder `/onboarding` page collects the first brand via the same
+    `CreateBrandForm` used at `/brands/new`; Phase 3 replaces its content
+    with the full multi-step wizard while keeping the route.
+  - Tests added (35 new, 49/49 total passing):
+    - `tests/unit/roles.test.ts` — `ROLE_RANK` ordering and every
+      `roleAtLeast` combination (equal, above, below minimum; viewer's and
+      owner's boundary cases).
+    - `tests/unit/validation-auth.test.ts` /
+      `tests/unit/validation-brands.test.ts` — valid/invalid fixtures for
+      every Phase 2 Zod schema, including `inviteMemberSchema` rejecting
+      `role: "owner"` (the `.exclude()` case flagged for verification in
+      the prior session).
+    - `tests/integration/brand-membership.test.ts` — extends the existing
+      pglite harness (`tests/db/pglite.ts`, real Postgres via WASM, real
+      RLS-bearing schema) to prove: a user can create two brands with
+      correct owner `brand_members` rows (including RLS-scoped visibility
+      of both); the create-brand-then-membership transaction rolls back
+      fully if the second insert fails; and a non-owner (editor) is
+      correctly rejected by `roleAtLeast` for both owner-gated
+      (`updateMemberRole`) and admin-gated (`inviteMember`) actions using
+      real `brand_members` rows read back from the database — not a
+      logic-only re-implementation. `src/lib/brands/actions.ts` and
+      `require-role.ts` themselves connect via Drizzle's `postgres-js`
+      driver (a real TCP client) which cannot attach to pglite's in-process
+      engine, so this test exercises the identical SQL shapes those
+      functions issue against the real schema instead of calling the
+      functions directly — documented in the test file's header comment.
+  - Genuinely NOT exercised in this sandbox (no live Supabase project): the
+    actual `supabase.auth.signUp`/`signInWithPassword`/email-delivery flow,
+    the `/api/auth/callback` code-exchange against a real Supabase Auth
+    server, and RLS-scoped Supabase-JS-client reads in `(app)/layout.tsx`
+    and `brands/actions.ts`'s `getAuthedUserId()` path. What IS verified:
+    every server action/route handler calls the real Supabase Auth SDK
+    methods and real Drizzle queries (no mocked/stubbed responses, no
+    TODO-only handlers), the app compiles and typechecks against those real
+    APIs, and the authorization/transaction logic those actions depend on
+    (`roleAtLeast`, the brand+membership transaction, role-gated rejection)
+    is proven against a real Postgres engine with real RLS policies loaded.
+  - `npm run typecheck`, `npm run lint`, `npm test` (7 files, 49/49
+    passing), and `npm run build` all pass clean after this phase.
 - [ ] Phase 3 — Onboarding
 - [ ] Phase 4 — Brand Brain
 - [ ] Phase 5 — Keyword Explorer
