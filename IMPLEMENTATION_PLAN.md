@@ -471,7 +471,73 @@ to `brand_members`.
     test, which auto-discovers the new `0002_semantic_search.sql` file).
   - `npm run typecheck`, `npm run lint`, `npm test` (13 files, 101/101
     passing), and `npm run build` all pass clean after this phase.
-- [ ] Phase 5 — Keyword Explorer
+- [x] Phase 5 — Keyword Explorer
+  - `src/lib/scoring/priority.ts` implements the EXACT formula from the
+    plan (`0.30·normalizedVolume + 0.25·(1-normalizedDifficulty) +
+    0.20·commercialIntent + 0.15·trend + 0.10·businessValue`), min-max
+    normalizing volume/difficulty against the brand's own keyword set
+    (0.5 for a single-keyword set with no variance, to avoid a
+    divide-by-zero). `tests/unit/priority-scoring.test.ts` hand-computes
+    exact expected outputs for a 3-keyword fixture (0.575, 0.43, 0.56 —
+    shown worked by hand in the test file's comments) and asserts them to
+    10 decimal places, plus monotonicity checks (higher volume must never
+    lower the score; higher difficulty must never raise it) and the
+    weights summing to exactly 1.
+  - `src/lib/scoring/cluster.ts`: deterministic clustering with zero ML
+    dependency — greedy single-link clustering on Jaccard similarity of
+    each term's significant tokens (lowercased, stopwords removed).
+    Reproducible for the same input/order every time.
+  - `src/lib/keywords/rescore.ts`: `rescoreAllKeywords(brandId)` recomputes
+    the brand's full baseline and writes normalized/computed values back
+    onto `keywords` while APPENDING (never overwriting) a row per keyword
+    to `keyword_scores` with a `formula_version` — so changing the
+    normalization baseline (or a future formula version) never destroys
+    prior score history. Called after every create/update/delete/CSV
+    import so the whole set is always consistently normalized.
+  - `src/lib/keywords/actions.ts`: full CRUD, CSV import
+    (`src/lib/csv/parse-keywords.ts`, same bad-row-reporting contract as
+    Phase 3's product importer), filter/sort/pagination
+    (`listKeywords` — search by term, min/max priority, sortable by
+    term/volume/difficulty/priority/createdAt, paginated), cluster
+    generation, and `generateBriefFromKeyword` — which does NOT block on
+    an LLM call; it inserts a real `jobs` row (type
+    `generate_content_brief`) for the Phase 7/12 pipeline to process. All
+    editor-role-gated (viewer for read-only listing) via
+    `requireRoleOrThrow`. Real `/keywords` page: add form, CSV import,
+    sortable/searchable/paginated table with per-row "Generate brief"/
+    delete actions and brand-wide "Generate clusters"/"Rescore all"
+    buttons — no dead buttons.
+  - A zod-resolver/React-Hook-Form typing mismatch surfaced while wiring
+    `AddKeywordForm`: `keywordSchema`'s original `.default(0)` on the
+    numeric fields made zod's inferred input type `number | undefined`,
+    which `@hookform/resolvers/zod`'s stricter v4 typing rejected against
+    `useForm<KeywordInput>`. Fixed by removing `.default()` from the
+    schema (all fields required) and supplying `defaultValues` directly
+    in `useForm(...)` instead — `parseKeywordCsvRow` already independently
+    defaults missing CSV numeric cells to 0 before validating, so CSV
+    import behavior is unaffected.
+  - Tests added (23 new, 123/123 total passing):
+    - `tests/unit/priority-scoring.test.ts` — the exact-value fixture
+      above, `minMaxNormalize` edge cases, `scoreKeywordSet` batch
+      behavior including the single-keyword 0.5-normalization case.
+    - `tests/unit/cluster-keywords.test.ts` — token-overlap grouping,
+      determinism, empty input, singleton clusters, longest-term naming,
+      stopword handling.
+    - `tests/integration/keyword-scoring.test.ts` — extends the pglite
+      harness to prove `keywords` persists normalized+computed values,
+      `keyword_scores` is genuinely append-only across repeated rescoring
+      (not overwritten), and RLS isolates both `keywords` and
+      `keyword_scores` between brands (new coverage for the scoring
+      columns specifically, on top of the generic keywords-table
+      isolation already proven in Phase 1's tenant-isolation tests).
+  - Genuinely NOT exercised in this sandbox: the `generate_content_brief`
+    job this phase creates is not yet processed by anything (the pipeline
+    that consumes it is Phase 7; the worker that dispatches it is Phase
+    12) — the job row itself is real and correctly shaped, verified by
+    inspecting its `type`/`payload`, but nothing drains the queue yet.
+  - `npm run typecheck`, `npm run lint`, `npm test` (16 files, 123/123
+    passing), and `npm run build` all pass clean after this phase.
+- [ ] Phase 6 — Competitor Radar
 - [ ] Phase 6 — Competitor Radar
 - [ ] Phase 7 — Content Pipeline
 - [ ] Phase 8 — Content Editor
