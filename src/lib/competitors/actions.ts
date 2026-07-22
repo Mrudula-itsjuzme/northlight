@@ -12,7 +12,11 @@ import {
   type CompetitorPageInput,
   type GapReportType,
 } from "@/lib/validation/competitors";
-import { persistGapReportsForCompetitor } from "@/lib/competitors/persist-gap-reports";
+import {
+  persistGapReportsForCompetitor,
+  persistGapReportsForCompetitorWithRealFetch,
+} from "@/lib/competitors/persist-gap-reports";
+import { isBrandDemo } from "@/lib/brands/actions";
 import type { ActionResult } from "@/lib/brands/types";
 
 function toActionError(err: unknown, fallback: string): ActionResult<never> {
@@ -186,12 +190,26 @@ export async function listGapReports(
 
 /**
  * Generates gap reports across all 5 gap types (content/schema/faq/
- * backlink/ai_citation) for one competitor, via the deterministic demo
- * analysis adapter (src/lib/competitors/gap-analysis.ts). Persists one
- * `gap_reports` row per type, `is_demo=true`, `generated_by='demo_adapter'`
- * — real, not mocked: the adapter's output is genuinely computed (seeded
- * deterministically by brand+competitor+type) and actually written to the
- * database, it just isn't a live LLM/crawl-based analysis.
+ * backlink/ai_citation) for one competitor.
+ *
+ * For a real (non-demo) brand, this tries the real fetch+parse adapter
+ * first (src/lib/competitors/fetch-adapter.ts) against the competitor's
+ * most recently added page URL, for the 3 gap types it can meaningfully
+ * derive from a single fetched page (content/schema/faq — see
+ * real-analysis.ts). On any failure (no page URL on file, robots.txt
+ * disallow, timeout, non-2xx, non-HTML content-type, oversized response),
+ * or for the 2 types it never supports (backlink/ai_citation), it falls
+ * back to the deterministic demo analysis adapter
+ * (src/lib/competitors/gap-analysis.ts) and records the fallback reason on
+ * the persisted row (`findings.fallbackReason`,
+ * `generated_by='demo_adapter_fallback'`).
+ *
+ * The seeded demo brand (`brands.is_demo`) ALWAYS uses the fully
+ * deterministic path (`persistGapReportsForCompetitor`) and never reaches
+ * the real fetch adapter — checked here via `isBrandDemo`, and also
+ * enforced independently by `scripts/seed.ts` calling
+ * `persistGapReportsForCompetitor` directly rather than through this
+ * action at all.
  */
 export async function generateGapReportsForCompetitor(
   brandId: string,
@@ -199,9 +217,12 @@ export async function generateGapReportsForCompetitor(
 ): Promise<ActionResult<{ reportCount: number }>> {
   try {
     await requireRoleOrThrow(brandId, "editor");
-    const result = await persistGapReportsForCompetitor(brandId, competitorId);
+    const isDemo = await isBrandDemo(brandId);
+    const result = isDemo
+      ? await persistGapReportsForCompetitor(brandId, competitorId)
+      : await persistGapReportsForCompetitorWithRealFetch(brandId, competitorId);
     revalidatePath("/competitors");
-    return { ok: true, data: result };
+    return { ok: true, data: { reportCount: result.reportCount } };
   } catch (err) {
     return toActionError(err, "Failed to generate gap reports.");
   }

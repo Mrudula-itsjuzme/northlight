@@ -36,6 +36,7 @@
     "@radix-ui/react-tooltip": "^1.2.13",
     "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.109.0",
+    "cheerio": "^1.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
