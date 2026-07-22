@@ -23,6 +23,7 @@ import {
   type ActionResult,
   type BrandListItem,
 } from "@/lib/brands/types";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export type { ActionResult, BrandListItem };
 
@@ -206,6 +207,9 @@ export async function inviteMember(
 
   try {
     const { userId } = await requireRoleOrThrow(brandId, "admin");
+
+    const limit = checkRateLimit("inviteSend", brandId);
+    if (!limit.ok) return limit;
 
     const db = getDb();
     const token = randomBytes(24).toString("hex");

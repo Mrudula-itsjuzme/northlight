@@ -9,6 +9,7 @@ import { generateContentBrief } from "@/lib/content/brief";
 import { runPipeline, retryPipelineStage } from "@/lib/content/pipeline/runner";
 import type { PipelineStage } from "@/lib/content/pipeline/schemas";
 import type { ActionResult } from "@/lib/brands/types";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 function toActionError(err: unknown, fallback: string): ActionResult<never> {
   if (err instanceof RoleError) return { ok: false, error: err.message };
@@ -21,6 +22,8 @@ export async function createBriefForKeyword(
 ): Promise<ActionResult<{ briefId: string }>> {
   try {
     await requireRoleOrThrow(brandId, "editor");
+    const limit = checkRateLimit("contentBrief", brandId);
+    if (!limit.ok) return limit;
     const briefId = await generateContentBrief(brandId, keywordId);
     revalidatePath("/content");
     return { ok: true, data: { briefId } };
@@ -74,6 +77,8 @@ export async function startPipelineRun(
 ): Promise<ActionResult<{ runId: string; status: string; articleId?: string }>> {
   try {
     await requireRoleOrThrow(brandId, "editor");
+    const limit = checkRateLimit("pipelineRun", brandId);
+    if (!limit.ok) return limit;
     const db = getDb();
 
     const [run] = await db

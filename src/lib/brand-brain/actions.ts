@@ -11,11 +11,13 @@ import {
   sourceTypeFromFilename,
   type ExtractableSourceType,
 } from "@/lib/brand-brain/extract-text";
+import { validateUpload } from "@/lib/brand-brain/validate-upload";
 import type { ActionResult } from "@/lib/brands/types";
 import {
   BRAND_DOCUMENTS_STORAGE_BUCKET,
   type BrandDocumentSummary,
 } from "@/lib/brand-brain/types";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export type { BrandDocumentSummary };
 
@@ -50,6 +52,14 @@ export async function uploadBrandDocument(
 
   try {
     await requireRoleOrThrow(brandId, "editor");
+
+    const limit = checkRateLimit("documentUpload", brandId);
+    if (!limit.ok) return limit;
+
+    const validation = validateUpload(fileBuffer, sourceType as ExtractableSourceType);
+    if (!validation.ok) {
+      return { ok: false, error: validation.error };
+    }
 
     const text = await extractText(sourceType as ExtractableSourceType, fileBuffer);
     if (!text || text.trim().length === 0) {

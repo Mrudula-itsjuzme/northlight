@@ -8,6 +8,7 @@ import { requireRoleOrThrow, RoleError } from "@/lib/brands/require-role";
 import { aiPromptSchema, type AiPromptInput } from "@/lib/validation/ai-prompts";
 import { persistVisibilitySnapshot } from "@/lib/ai/visibility/persist-snapshot";
 import type { ActionResult } from "@/lib/brands/types";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 function toActionError(err: unknown, fallback: string): ActionResult<never> {
   if (err instanceof RoleError) return { ok: false, error: err.message };
@@ -90,6 +91,8 @@ export async function runVisibilitySnapshot(
 ): Promise<ActionResult<{ snapshotCount: number }>> {
   try {
     await requireRoleOrThrow(brandId, "editor");
+    const limit = checkRateLimit("visibilitySnapshot", brandId);
+    if (!limit.ok) return limit;
     const result = await persistVisibilitySnapshot(brandId, promptId);
     revalidatePath("/visibility");
     return { ok: true, data: result };
