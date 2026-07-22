@@ -921,7 +921,109 @@ to `brand_members`.
     for visibility rather than silently expanding scope.
   - `npm run typecheck`, `npm run lint`, `npm test` (30 files, 229/229
     passing), and `npm run build` all pass clean after this phase.
-- [ ] Phase 12 — Jobs/Usage/Error States
+- [x] Phase 12 — Jobs, Usage, Errors, Empty/Loading States
+  - Core/action split extracted for every action that a background job
+    now also needs to call: `src/lib/competitors/persist-gap-reports.ts`
+    (`persistGapReportsForCompetitor`), `src/lib/ai/visibility/persist-snapshot.ts`
+    (`persistVisibilitySnapshot`), `src/lib/recommendations/compute-core.ts`
+    (`computeAndPersistRecommendations`) — each is the DB-writing logic
+    that used to live inline inside a `"use server"` action, now called
+    by BOTH the action (after its `requireRoleOrThrow` gate) and the
+    worker (which has no authenticated request to check a role against).
+    `runPipeline`, `generateContentBrief`, `processDocument`, and
+    `rescoreAllKeywords` already had this split from Phases 4/5/7 — their
+    docstrings explicitly anticipated Phase 12 wiring them into a worker.
+  - `src/lib/validation/jobs.ts` + `src/lib/jobs/types.ts`: one Zod
+    schema per `job_type` enum value, validated before any handler runs.
+  - `src/lib/jobs/worker.ts`: `claimNextJob` (atomic
+    `UPDATE jobs SET status='running' ... WHERE id = (SELECT ... FOR
+    UPDATE SKIP LOCKED) RETURNING ...` — safe under concurrent workers),
+    `processJob` (dispatches by `type` to the matching handler, records
+    succeeded/result or queued-with-backoff/failed+error), `runWorkerOnce`
+    (claim-and-process loop, batch-capped), `decideFailureOutcome` (the
+    retry-vs-permanently-failed decision extracted as a pure function:
+    30s * attempts-so-far linear backoff until `maxAttempts`, then
+    'failed'), and `countJobsByStatus`. All 7 job types
+    (embed_brand_document, generate_content_brief, run_content_pipeline,
+    generate_gap_report, run_ai_visibility_snapshot,
+    compute_recommendations, recompute_keyword_scores) have a registered
+    handler calling the real core function above.
+  - `src/lib/jobs/enqueue.ts`: `enqueueJob` — validates payload, inserts
+    a `jobs` row with `brandId` on the row itself (not just inside the
+    payload), for future callers that want async processing instead of
+    the current synchronous action calls.
+  - `src/lib/usage/record.ts`: `recordUsageEvent` (best-effort, never
+    throws) wired into the worker's embedding/pipeline-run/gap-report/
+    visibility-check/keyword-rescore handlers, recording real
+    `usage_events` rows for billable-ish actions.
+  - `scripts/worker.ts`: one-shot entrypoint (`npm run worker`) —
+    processes every currently-due job, then exits, intended to run on a
+    schedule (cron/Vercel Cron/pg_cron) rather than as a daemon, matching
+    the "Postgres table as queue" approach (see ARCHITECTURE.md). Also
+    fixed `db:seed`'s script command the same way, pre-emptively for
+    Phase 13.
+  - Non-obvious fix required to make `npm run worker` actually work:
+    several handler modules import the `server-only` marker package,
+    which unconditionally throws unless resolved under React's
+    `"react-server"` package-export condition; Next.js's webpack build
+    understands that condition automatically, but a plain
+    Node/tsx-executed script does not. Fixed by setting
+    `NODE_OPTIONS=--conditions=react-server` in the `worker`/`db:seed`
+    npm scripts (package.json) — confirmed this changes the failure mode
+    from a `server-only` throw to the expected "DATABASE_URL is not set"
+    message.
+  - `src/components/ui/empty-state.tsx`, `error-state.tsx`,
+    `loading-state.tsx`: the 3 shared components. Retrofitted onto EVERY
+    page/list built in Phases 2-11 that had an ad hoc placeholder:
+    - The identical "Select a brand to continue" paragraph on 9 pages
+      (dashboard, analytics, keywords, competitors, content, content/
+      [articleId], brand-brain, visibility, recommendations) ->
+      `<EmptyState title="Select a brand to continue" ... />`.
+    - 23 ad hoc `bg-destructive/10 px-3 py-2 text-sm text-destructive`
+      error `<div>`s across every form and list-result page (login,
+      signup, reset-password x2, brands/new, onboarding steps x4,
+      keywords x3, competitors x2, brand-brain x2, content x3,
+      recommendations, dashboard, analytics) -> `<ErrorState message=.../>`.
+    - Top-level "nothing here yet" placeholders in competitor list,
+      content brief list, brand document list, AI visibility prompt
+      list, and recommendation list -> `<EmptyState icon=... title=...
+      description=.../>` with a real, reachable next action described
+      (never a dead end). Left the keyword table's empty `<tr>` and the
+      per-competitor nested "no gap reports yet" as plain text, since a
+      bordered empty-state box doesn't fit inside a table cell or a
+      small nested list — judgment call, not an oversight.
+    - `LoadingState` is built and available but has no retrofit target:
+      every data fetch in this app happens in an async Server Component
+      (not a client-side `useEffect` fetch), and every pending client
+      action already disables its own button and swaps its own label
+      (e.g. "Computing...") rather than needing a separate loading
+      section — confirmed by grepping for `useEffect` across
+      `src/app` (exactly one hit, an unrelated debounce-timer cleanup).
+  - Retrofitted the keyword table's `source` column to render
+    `<DataBadge kind="demo" />` when `source === 'demo_seed'` instead of
+    the raw string, closing the last remaining un-badged is_demo-adjacent
+    column ahead of Phase 13 actually seeding `demo_seed` keywords.
+  - Tests (32 files, 245/245 total passing):
+    - `tests/unit/jobs-worker.test.ts` — `decideFailureOutcome`'s exact
+      backoff math (30s * attempts, scaling linearly, permanently failed
+      once attempts reaches maxAttempts or beyond) and that
+      `JOB_PAYLOAD_SCHEMAS` has exactly one schema per `job_type` enum
+      value with correct accept/reject behavior per schema.
+    - `tests/integration/jobs-worker.test.ts` — extends the pglite
+      harness to run the EXACT claim SQL `claimNextJob` uses: proves it
+      claims the oldest due queued job and flips it to running with
+      attempts incremented, refuses to claim a future-run_at or already-
+      running job, claims strictly oldest-first among multiple due jobs,
+      and that the success/retry/permanent-failure status transitions
+      persist correctly; also proves RLS isolates `jobs` between brands.
+  - Genuinely NOT exercised in this sandbox: the worker has never run
+    against a live DATABASE_URL end-to-end (no live Postgres connection
+    configured) — its claim/dispatch/retry SQL is proven against pglite,
+    and every handler calls the same core function already covered by
+    that phase's own tests, but the two have not been observed running
+    together as one live process.
+  - `npm run typecheck`, `npm run lint`, `npm test` (32 files, 245/245
+    passing), and `npm run build` all pass clean after this phase.
 - [ ] Phase 13 — Seed/Demo Data
 - [ ] Phase 14 — Tests/Lint/Build
 - [ ] Phase 15 — Documentation & Deployment
