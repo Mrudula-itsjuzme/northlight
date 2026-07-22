@@ -18,8 +18,11 @@ export const DEMO_BRAND = {
 export const DEMO_USER = {
   // Local/demo-only — see README.md "Demo login" section. Never a real
   // secret; this account only ever exists in a local/dev Supabase
-  // project seeded by this script.
+  // project seeded by this script, which creates it via the Supabase
+  // Admin API (auth.admin.createUser) using the service role key, so no
+  // manual dashboard steps are needed after `npm run db:seed`.
   email: "demo@curlco.northlight.test",
+  password: "NorthlightDemo123!",
   fullName: "Demo Owner",
 };
 

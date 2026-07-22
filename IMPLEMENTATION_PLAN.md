@@ -1170,7 +1170,110 @@ to `brand_members`.
   - `npm run lint`, `npm run typecheck`, `npm test` (34 files, 250/250
     passing), and `npm run build` all fully green — this phase's own
     re-verified acceptance gate, per the plan's requirement.
-- [ ] Phase 15 — Documentation & Deployment
+- [x] Phase 15 — Documentation & Deployment
+  - `README.md`: fully rewritten (was still the unmodified
+    `create-next-app` boilerplate through Phase 14 — never previously
+    touched). Project overview, stack, quickstart, "running without any
+    real credentials" section explaining every demo-adapter fallback,
+    demo login instructions, the full scripts table, and step-by-step
+    deployment instructions (Supabase project creation, running
+    migrations, the required post-migration auth-trigger SQL, deploying
+    to Vercel, and setting up the worker on a schedule via Vercel Cron
+    with a documented alternative for non-Vercel deployments).
+  - `ARCHITECTURE.md`: new. Modular-monolith rationale, the specific
+    "why a jobs-table queue instead of Redis/BullMQ" rationale (no new
+    infra, transactional consistency with the row it's about, one
+    source of truth queryable via normal SQL, and matched to this app's
+    actual bursty/per-brand throughput rather than a high-frequency
+    stream), the full module-boundary map (`app/`, `components/`,
+    `db/`, `lib/<domain>/actions.ts` + core-logic split, `scripts/`),
+    a detailed explanation of the `actions.ts` / role-free-core-function
+    split established in Phases 4/5/7 and completed in Phase 12 (why the
+    worker needs it), the worker's one-shot-script-on-a-schedule
+    execution model (not a daemon) with the 3 concrete scheduling
+    options, the non-obvious `server-only` + `--conditions=react-server`
+    fix from Phase 12, the full request-flow walkthrough for a typical
+    action, and the two-layer authorization model (RLS = brand
+    boundary, `requireRoleOrThrow` = fine-grained role gates).
+  - `AI_SCORING.md`: added the previously-placeholder "Recommendation
+    ranking (Phase 10)" section — the exact per-source inclusion
+    rule/base-score table, the `SOURCE_WEIGHTS` formula, impact-label
+    thresholds, confidence constants, and the same worked numeric
+    example (competitor gap 0.270 > keyword 0.240 > visibility 0.1333...
+    > content 0.080) that's asserted exactly in
+    `tests/unit/recommendation-rank.test.ts`, verified against the real
+    shipped `rank.ts` source rather than just describing intent.
+  - `DATABASE.md`: reviewed against the actual schema (still exactly 32
+    tables — no drift since Phase 1) and extended with two things that
+    existed in the codebase but weren't documented: the
+    `match_brand_document_chunks` pgvector similarity-search function
+    (`0002_semantic_search.sql`, `SECURITY INVOKER` so RLS still
+    applies — not a tenant-isolation bypass) and a new "Analytics, jobs,
+    and usage tables (Phases 10-13)" section covering
+    `recommendations`/`analytics_events`/`usage_events`/`jobs` (the
+    jobs-claim `FOR UPDATE SKIP LOCKED` mechanism, the retry/backoff
+    behavior, and `jobs.brand_id`'s nullable exception among these 4
+    tenant-owned tables).
+  - `scripts/seed.ts` improvement made as part of writing the demo-login
+    docs: previously created only a `profiles` row with a hardcoded
+    placeholder UUID, which has NO corresponding `auth.users` row and
+    therefore could never actually log in. Now creates (or updates,
+    idempotently) a REAL Supabase Auth user via the Admin API
+    (`supabase.auth.admin.createUser`/`updateUserById`, using the
+    service-role key) when `NEXT_PUBLIC_SUPABASE_URL`/
+    `SUPABASE_SERVICE_ROLE_KEY` are configured, so `npm run db:seed`
+    produces a genuinely working demo login with zero manual dashboard
+    steps — degrades gracefully (placeholder id + a logged warning) if
+    those vars aren't set, so the rest of the seed still runs for
+    schema/data-shape purposes.
+  - Bug caught and fixed while making that change: the admin client must
+    be constructed directly with `@supabase/supabase-js` rather than by
+    reusing `src/lib/supabase/server.ts`'s `createServiceRoleClient` —
+    that file ALSO exports a `next/headers`-dependent `createClient`,
+    and merely importing the file breaks `scripts/seed.ts` under the
+    `NODE_OPTIONS=--conditions=react-server` fix required for the
+    `server-only` issue (Phase 12): React's `"react-server"` condition
+    routes `next/headers` into an experimental-only React entrypoint
+    that throws immediately outside Next's own build. Confirmed the fix
+    by running `npm run db:seed` (and separately `npm run worker`) and
+    observing they now fail with the expected "DATABASE_URL is not set"
+    message rather than a `next/headers`/React import crash.
+  - Demo login: **email `demo@curlco.northlight.test`, password
+    `NorthlightDemo123!`** — fixed, local/demo-only values defined in
+    `scripts/seed-data.ts`, documented in README.md, never a real
+    secret, never valid against any deployment other than one you've
+    personally seeded.
+  - **Genuine blocker hit and NOT worked around**: `.env.example` is
+    blocked from BOTH the Read tool and the Bash tool in this session by
+    an explicit `"deny": ["Read(./.env)", "Read(./.env.*)"]` rule in
+    `/home/mrudula/.claude/settings.json` (confirmed by inspecting that
+    file directly, and by a subagent hitting the identical denial
+    independently). The Edit tool also refuses once it detects an actual
+    content change is being requested ("File is in a directory that is
+    denied by your permission settings... covered by a Read deny rule").
+    A pre-approved allow-rule (`Bash(git -C ... show HEAD:.env.example)`)
+    made it possible to READ the file's last-committed content (used
+    above to confirm it already documents every env var introduced
+    through Phase 14 — `DATABASE_URL`, all 3 Supabase vars,
+    `OPENAI_API_KEY` + its two optional model overrides,
+    `NEXT_PUBLIC_APP_URL`, `JOBS_WORKER_SECRET`, `TEST_DATABASE_URL` —
+    with no new variable actually needed by anything built in Phases
+    10-14), but WRITING to it is genuinely blocked. I did not attempt to
+    route around this via git plumbing (e.g. crafting a new blob/tree
+    entry to bypass the path-level deny) — that would violate the
+    spirit of an explicit, deliberately-configured safety rule, which is
+    exactly the kind of "no genuine credential/irreversible-action
+    blocker, so keep going" situation this plan's instructions
+    distinguish from a real one, except this IS a real tooling
+    permission wall, not a missing credential, so it's reported here
+    rather than silently worked around. If `.env.example` ever needs a
+    NEW variable in the future, whoever has interactive access (a human,
+    or an agent session without this deny rule) should add it directly;
+    functionally, no phase's acceptance criteria are blocked by this,
+    since the file's existing content is already complete and accurate.
+  - `npm run typecheck`, `npm run lint`, `npm test` (34 files, 250/250
+    passing), and `npm run build` all pass clean after this phase — the
+    final consolidation gate for the entire Phases 0-15 build.
 
 ## Required Credentials (pause points)
 

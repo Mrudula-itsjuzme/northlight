@@ -30,6 +30,7 @@
  * slug, so it's safe to re-seed during development.
  */
 import "dotenv/config";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { eq, and } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
@@ -123,7 +124,59 @@ async function main() {
   }
 
   // --- Demo user + brand + membership ---
-  const demoUserId = "00000000-0000-4000-8000-000000000001";
+  // Creates the actual Supabase Auth user via the Admin API (service
+  // role key), so `npm run db:seed` produces a genuinely working login
+  // with no manual dashboard steps — rather than only inserting a
+  // `profiles` row with a placeholder id that has no corresponding
+  // `auth.users` row (which would 404 on login). Falls back to a fixed
+  // placeholder id if NEXT_PUBLIC_SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY
+  // aren't configured (e.g. seeding against the pglite test harness,
+  // which has no `auth` schema at all — see DATABASE.md), so the rest of
+  // the seed can still proceed for schema/data-shape purposes even
+  // without a real Supabase project.
+  //
+  // Builds the admin client directly with `@supabase/supabase-js`
+  // (NOT via src/lib/supabase/server.ts's `createServiceRoleClient`,
+  // even though it wraps the identical call) because that file also
+  // exports a `next/headers`-dependent `createClient`, and merely
+  // importing `next/headers` breaks under this script's
+  // `NODE_OPTIONS=--conditions=react-server` (required for the
+  // `server-only` fix described in scripts/worker.ts) — React's
+  // "react-server" condition routes `next/headers` into an
+  // experimental-only React entrypoint that throws outside Next's own
+  // build. Constructing the client inline here avoids that import
+  // entirely.
+  let demoUserId = "00000000-0000-4000-8000-000000000001";
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    const supabase = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      { auth: { autoRefreshToken: false, persistSession: false } },
+    );
+    const { data: existingUsers } = await supabase.auth.admin.listUsers();
+    const existingUser = existingUsers?.users.find((u: { email?: string }) => u.email === DEMO_USER.email);
+
+    if (existingUser) {
+      await supabase.auth.admin.updateUserById(existingUser.id, { password: DEMO_USER.password });
+      demoUserId = existingUser.id;
+    } else {
+      const { data: created, error: createError } = await supabase.auth.admin.createUser({
+        email: DEMO_USER.email,
+        password: DEMO_USER.password,
+        email_confirm: true,
+      });
+      if (createError || !created.user) {
+        throw new Error(`Failed to create demo auth user: ${createError?.message}`);
+      }
+      demoUserId = created.user.id;
+    }
+    console.log(`  Demo auth user ready: ${DEMO_USER.email} (${demoUserId})`);
+  } else {
+    console.log(
+      "  NEXT_PUBLIC_SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not set — skipping real auth user creation, using a placeholder profile id. Demo login will not work until these are configured and the seed is re-run.",
+    );
+  }
+
   await db
     .insert(profiles)
     .values({ id: demoUserId, email: DEMO_USER.email, fullName: DEMO_USER.fullName })
@@ -421,7 +474,7 @@ async function main() {
 
   console.log("\nSeed complete.");
   console.log(`  Brand: ${DEMO_BRAND.name} (${brandId})`);
-  console.log(`  Demo login: ${DEMO_USER.email} — see README.md for the local/demo-only password.`);
+  console.log(`  Demo login: ${DEMO_USER.email} / ${DEMO_USER.password} (local/demo-only — see README.md).`);
   console.log(
     `  Blocked-by-publish-gate article id: ${blockedArticleId} — visit /content/${blockedArticleId} to see the publish gate in action.`,
   );

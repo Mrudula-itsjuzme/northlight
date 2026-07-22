@@ -189,3 +189,56 @@ represents these numbers as an official/authoritative citation count.
 `OPENAI_API_KEY` is absent also produces 1536-dimension vectors (a
 deterministic hash-based embedding — see `AI_SCORING.md`), so retrieval
 code doesn't need to branch on which adapter produced a given row.
+
+`src/db/migrations/0002_semantic_search.sql` defines
+`match_brand_document_chunks(p_brand_id, p_query_embedding, p_match_count)`
+— a Postgres function performing cosine-distance similarity search over
+one brand's chunks (`ORDER BY embedding <=> query_embedding LIMIT
+match_count`), called by `src/lib/brand-brain/search.ts`. It is
+`SECURITY INVOKER` (the default — not `SECURITY DEFINER`), so RLS on
+`brand_document_chunks` still applies to whoever calls it; this function
+is not a way to bypass tenant isolation, it's scoped by the `p_brand_id`
+parameter AND still subject to the calling role's RLS policies. Like the
+`vector(1536)` column itself, this function can't be exercised against
+pglite (no pgvector extension bundled in `@electric-sql/pglite`'s contrib
+set) — it's validated for syntactic correctness only, via
+`tests/integration/migration-syntax.test.ts`.
+
+## Analytics, jobs, and usage tables (Phases 10-13)
+
+- `recommendations`: one row per ranked recommendation
+  (`title`/`reason`/`evidence`/`impact`/`confidence`/`action`/
+  `source_signal`/`rank_score`/`status`), fully replaced (not
+  incrementally merged) every time `computeAndPersistRecommendations`
+  runs, since ranking is relative to the brand's CURRENT complete signal
+  set. See AI_SCORING.md's "Recommendation ranking" section for the exact
+  formula.
+- `analytics_events`: append-only, freeform (`event_type` + `payload`
+  jsonb), used for coarse events like `brand_created`/
+  `articles_seeded`/`recommendations_computed` (see `scripts/seed.ts`) —
+  distinct from `usage_events` below, which is specifically for
+  billable-ish AI/processing actions.
+- `usage_events`: append-only, one row per billable-ish action
+  (`embedding`, `content_pipeline_run`, `ai_visibility_check`,
+  `gap_report_generation`, `keyword_rescore` — see
+  `src/lib/usage/record.ts`'s `UsageEventType` union), recorded both from
+  the synchronous action paths and from the job worker, so usage is
+  tracked identically regardless of which path processed the work.
+- `jobs`: the Postgres-backed queue (see ARCHITECTURE.md for why no
+  Redis/BullMQ). `src/lib/jobs/worker.ts`'s `claimNextJob` uses
+  `SELECT ... FOR UPDATE SKIP LOCKED` inside an `UPDATE ... WHERE id = (
+  subquery )` so multiple worker processes can safely race for jobs
+  without double-processing the same row — this is proven against the
+  real schema in `tests/integration/jobs-worker.test.ts`, including that
+  a future-`run_at` or already-`running` job is never (re-)claimed, and
+  that failed jobs are retried with a linear backoff
+  (`30s * attempts_so_far`) until `max_attempts`, then marked
+  permanently `failed`.
+
+All 4 tables carry `brand_id` + the standard tenant RLS policy (see
+"Multi-tenancy model" above). `jobs.brand_id` is the one nullable
+exception among them (a small number of possible future job types may
+not be tenant-scoped — e.g. cross-tenant maintenance — though every job
+type actually defined today IS tenant-scoped and always sets it); every
+other column here follows the same non-nullable `brand_id` pattern as
+every other tenant-owned table in this schema.

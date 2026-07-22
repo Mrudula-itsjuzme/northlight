@@ -213,4 +213,78 @@ Given raw response text and a brand name:
 
 ## Recommendation ranking (Phase 10)
 
-*To be added when Phase 10 lands.*
+Implemented in `src/lib/recommendations/rank.ts`'s pure `rankRecommendations`
+function — no LLM call, fully deterministic, so the same input signals
+always produce the same ranked output (exhaustively fixture-tested in
+`tests/unit/recommendation-rank.test.ts`).
+
+**Inputs** (gathered by `src/lib/recommendations/compute-core.ts` from
+real, already-persisted rows — never fabricated):
+
+- `keywords`: `{ keywordId, term, priorityScore }` from the `keywords`
+  table (see the priority formula above).
+- `gaps`: `{ competitorId, competitorName, type, priorityScore,
+  findingTitle }` from `gap_reports` joined to `competitors`.
+- `content`: `{ articleId, title, status, seoScore, eeatScore,
+  aiReadinessScore }` from `articles`.
+- `visibility`: `{ promptId, promptText, platformDisplayName, mentioned,
+  sentiment }` from `ai_visibility_snapshots` joined to `ai_prompts` and
+  `ai_platforms`.
+
+**Per-source inclusion rule and base score** (each source's base score is
+normalized to `[0, 1]` before weighting):
+
+| Source | Included when | Base score |
+|---|---|---|
+| Keyword | `priorityScore >= 0.5` | `priorityScore` itself |
+| Competitor gap | always (every gap report row) | `priorityScore` itself |
+| Content | `status !== 'published'` AND average of the 3 non-null scores `< 80` (0-100 scale) | `(100 - avgScore) / 100` — a bigger quality gap ranks higher |
+| Visibility | `>= 50%` of a prompt's platform snapshots have `mentioned = false` | `notMentionedCount / totalSnapshots` for that prompt |
+
+**Final rank score**:
+
+```
+rankScore = baseScore * SOURCE_WEIGHT[sourceType]
+
+SOURCE_WEIGHTS = { keyword: 0.30, competitor: 0.30, content: 0.20, visibility: 0.20 }
+```
+
+The 4 weights sum to exactly `1.0`, so a top-of-pool score (`baseScore =
+1`) from any single source type is comparable in magnitude to any other
+source's top-of-pool score. All recommendations from all 4 sources are
+merged into one list and sorted by `rankScore` descending; exact ties are
+broken by original generation order (keyword before competitor before
+content before visibility) for deterministic, reproducible output.
+
+**Impact label** (qualitative, derived from the SAME per-item base score
+that produced its rankScore, not from the final weighted rankScore):
+`>= 0.66` -> `"high"`, `>= 0.33` -> `"medium"`, else `"low"`.
+
+**Confidence** (0-1, a fixed per-source-type constant reflecting how
+directly measured vs. inferred that source's signal is): keyword `0.7`,
+competitor gap `0.6` (demo-adapter-derived), content `0.8` (deterministic
+formula, high confidence in the signal itself), visibility `0.5` (AI
+visibility is directional only, per this document's earlier section —
+lower confidence is intentional here).
+
+### Worked example
+
+Fixture from `tests/unit/recommendation-rank.test.ts`: one keyword
+(priorityScore 0.8), one competitor gap (priorityScore 0.9), one
+under-80-average article (seo/eeat/aiReadiness all 60), one visibility
+prompt mentioned on 1 of 3 platforms.
+
+| Source | Base score | Weight | rankScore |
+|---|---|---|---|
+| Competitor gap | 0.9 | 0.30 | **0.270** (highest) |
+| Keyword | 0.8 | 0.30 | **0.240** |
+| Visibility | 2/3 (not mentioned on 2 of 3) | 0.20 | **0.1333...** |
+| Content | (100-60)/100 = 0.4 | 0.20 | **0.080** (lowest) |
+
+Recommendations are persisted to the `recommendations` table with a full
+recompute each time `computeRecommendations`/`compute_recommendations`
+job runs (the prior set is deleted and replaced inside a transaction,
+since ranking is relative to the CURRENT complete signal set — the same
+approach Phase 5 uses for keyword-cluster recomputation), each row
+carrying `title`/`reason`/`evidence`/`impact`/`confidence`/`action`/
+`sourceSignal`/`rankScore`/`status`.
