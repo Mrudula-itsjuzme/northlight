@@ -1,7 +1,8 @@
-import { getActiveBrandId } from "@/lib/brands/actions";
+import { getActiveBrandId, isBrandDemo } from "@/lib/brands/actions";
 import { listContentBriefs, listPipelineRuns } from "@/lib/content/actions";
 import { listKeywords } from "@/lib/keywords/actions";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { DataBadge } from "@/components/ui/data-badge";
 import { BriefList } from "./brief-list";
 import { GenerateBriefForm } from "./generate-brief-form";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -18,10 +19,11 @@ export default async function ContentPage() {
     );
   }
 
-  const [briefsResult, runsResult, keywordsResult] = await Promise.all([
+  const [briefsResult, runsResult, keywordsResult, isDemo] = await Promise.all([
     listContentBriefs(brandId),
     listPipelineRuns(brandId),
     listKeywords(brandId, { pageSize: 100 }),
+    isBrandDemo(brandId),
   ]);
 
   const briefs = briefsResult.ok ? briefsResult.data : [];
@@ -32,14 +34,17 @@ export default async function ContentPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Content Pipeline</h1>
-        <p className="text-muted-foreground">
-          Content briefs generated from keywords (Keyword Explorer) run
-          through 8 stages — Research, Strategy, Outline, Writer, Editor,
-          SEO Optimizer, Fact Check, Schema Generator — each persisted and
-          retryable independently.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Content Pipeline</h1>
+          <p className="text-muted-foreground">
+            Content briefs generated from keywords (Keyword Explorer) run
+            through 8 stages — Research, Strategy, Outline, Writer, Editor,
+            SEO Optimizer, Fact Check, Schema Generator — each persisted and
+            retryable independently.
+          </p>
+        </div>
+        {isDemo && <DataBadge kind="demo" />}
       </div>
 
       {!briefsResult.ok && (

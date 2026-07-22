@@ -1,6 +1,7 @@
-import { getActiveBrandId } from "@/lib/brands/actions";
+import { getActiveBrandId, isBrandDemo } from "@/lib/brands/actions";
 import { listRecommendations } from "@/lib/recommendations/actions";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { DataBadge } from "@/components/ui/data-badge";
 import { RecommendationList } from "./recommendation-list";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
@@ -16,17 +17,20 @@ export default async function RecommendationsPage() {
     );
   }
 
-  const result = await listRecommendations(brandId);
+  const [result, isDemo] = await Promise.all([listRecommendations(brandId), isBrandDemo(brandId)]);
   const recommendations = result.ok ? result.data : [];
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Recommendations</h1>
-        <p className="text-muted-foreground">
-          Ranked action items derived from your keyword priorities,
-          competitor gaps, content quality, and AI visibility signals.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Recommendations</h1>
+          <p className="text-muted-foreground">
+            Ranked action items derived from your keyword priorities,
+            competitor gaps, content quality, and AI visibility signals.
+          </p>
+        </div>
+        {isDemo && <DataBadge kind="demo" />}
       </div>
 
       {!result.ok && (

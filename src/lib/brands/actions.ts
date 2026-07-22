@@ -173,6 +173,20 @@ export async function getActiveBrandId(): Promise<string | null> {
 }
 
 /**
+ * Reads `brands.is_demo` for one brand — the single source of truth every
+ * page uses to decide whether to render the shared `<DataBadge kind="demo" />`
+ * (src/lib/analytics/data-labels.ts) at the page/brand level, rather than
+ * each page re-deriving "is this a demo brand" its own way. Returns false
+ * (never throws) if the brand can't be found, so a stale/missing brandId
+ * never blocks a page from rendering — it just won't show the badge.
+ */
+export async function isBrandDemo(brandId: string): Promise<boolean> {
+  const db = getDb();
+  const [row] = await db.select({ isDemo: brands.isDemo }).from(brands).where(eq(brands.id, brandId)).limit(1);
+  return row?.isDemo ?? false;
+}
+
+/**
  * Invites a new member by email. Owner/admin only — enforced here in the
  * application layer via `requireRoleOrThrow`, not just RLS (RLS only
  * enforces the brand boundary, not this role gate; see DATABASE.md).

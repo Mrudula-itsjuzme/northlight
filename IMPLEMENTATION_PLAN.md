@@ -1024,7 +1024,115 @@ to `brand_members`.
     together as one live process.
   - `npm run typecheck`, `npm run lint`, `npm test` (32 files, 245/245
     passing), and `npm run build` all pass clean after this phase.
-- [ ] Phase 13 — Seed/Demo Data
+- [x] Phase 13 — Seed/Demo Data
+  - `scripts/seed-data.ts`: static fixture data for the "Curl Co" tween
+    haircare demo brand — 5 products, 3 brand documents (voice guide,
+    ingredient safety policy, product care guide), 14 keywords with raw
+    volume/difficulty/commercialIntent/trend/businessValue spanning a
+    realistic range (verified in tests/unit/seed-targets.test.ts to
+    produce a >0.3 priority-score spread with values both >=0.6 and
+    <0.4, not bunched together), 3 competitors, 6 article topics (2
+    published, 1 approved, 1 review, 1 draft, and exactly 1 with
+    `targetState: "blocked_unresolved_claim"` — the deliberately
+    unresolved-claim article the plan requires), and 3 AI visibility
+    prompts.
+  - `scripts/seed.ts`: the orchestration script. Writes DIRECTLY via
+    Drizzle (same trusted-process rationale as the job worker/migration
+    script — no authenticated HTTP request exists to gate against) but
+    reuses the REAL scoring/pipeline functions throughout, never
+    hardcoding a score: `rescoreAllKeywords` (real priority formula),
+    `processDocument` (real chunking + embedding via the demo hash
+    adapter) for every brand document, `persistGapReportsForCompetitor`
+    (real deterministic gap analysis) for every competitor,
+    `runPipeline` (the REAL 8-stage content pipeline) for every article
+    — then reads back the pipeline's own real `seo_optimizer` step
+    output (`content_pipeline_steps.output.metaDescription`) rather than
+    fabricating a description string, and calls the real
+    `computeArticleScores` against genuine pipeline output,
+    `computeAndPersistRecommendations` (real ranking engine) once all
+    signals exist. The one deliberately-unresolved-claim article gets a
+    real `article_claims` row with `status: 'unresolved'`, proving the
+    Phase 8 publish gate blocks it (verified against the real
+    `canPublish` function in the test below). Sets `brands.isDemo = true`
+    on the brand and `source: 'demo_seed'` on every keyword; idempotent
+    (deletes any prior brand with the same slug before re-seeding, so
+    `npm run db:seed` is safe to re-run during development).
+  - AI visibility history: 3 prompts x 8 weeks x 6 platforms (144
+    snapshots), generated via the REAL `createDemoVisibilityAdapter` +
+    `parseVisibilityResponse` for every row (`is_demo=true` throughout).
+    Historical variation across weeks is produced by salting the input
+    prompt text passed to the (still fully deterministic) demo adapter
+    with a week marker for weeks 4-7, while weeks 0-3 use the real prompt
+    text as-is — the displayed `prompt_text` column always stores the
+    real prompt; only the adapter's OWN internal seed input varies to
+    simulate a realistic non-flat trend over time, not the persisted data
+    users see.
+  - Verified illustrative score targets (AI Growth Score ~78 / SEO ~84 /
+    AI Visibility ~62) against the REAL scoring functions in
+    `tests/unit/seed-targets.test.ts`, since `scripts/seed.ts` itself
+    cannot execute in this sandbox (no live DATABASE_URL/pgvector
+    connection):
+    - Keyword priority scores: verified spread (max-min > 0.3, both a
+      >=0.6 and a <0.4 keyword present) — average computed at 0.462.
+    - AI visibility mention rate: verified in the range (50%, 75%) using
+      the seed script's exact week-salting approach — actual observed
+      value 62.5%, landing almost exactly on the ~62% illustrative
+      target.
+    - SEO score: **documented, verified deviation from the ~84
+      target.** The real, deterministic `seo_optimizer` stage (short
+      meta title/description built from realistic tween-haircare keyword
+      phrases, always includes an H2 and the primary keyword in both
+      title and body) satisfies every one of `computeSeoScore`'s 5
+      checks for every seeded keyword phrase actually used, so every
+      seeded article's SEO score is a genuine, computed 100 — not 84.
+      This was NOT forced or hidden: the test
+      (`tests/unit/seed-targets.test.ts`) asserts this exact value with
+      an explanation, rather than asserting a fabricated "~84" that
+      isn't what the real code produces. Artificially degrading a real
+      keyword/brief just to force a lower number was rejected as less
+      honest than reporting the real computed value with an explanation.
+      EEAT genuinely varies (25 for the deliberately-blocked article vs.
+      75 for the rest), proving the claim/trust checks are live signals.
+    - No single "AI Growth Score" function exists anywhere in the
+      codebase (grepped — zero hits) prior to or as part of this phase;
+      the plan's "~78" figure is treated as a general illustrative
+      composite across the real per-domain scores above (SEO,
+      AI-readiness, keyword priority, AI visibility), not a new metric
+      this phase invented or hardcoded — no new "growth score" column or
+      formula was added, since none was specified as part of any prior
+      phase's acceptance criteria and inventing one now would be scope
+      creep beyond what Phases 1-12 established.
+  - `src/lib/brands/actions.ts`: added `isBrandDemo(brandId)` — the one
+    place every page reads `brands.is_demo` from, instead of
+    `getAnalyticsSnapshot` being the only caller. Wired into
+    `/content` and `/recommendations` (both had zero demo indication
+    before this phase) alongside the already-demo-badged
+    `/dashboard`, `/analytics`, `/competitors`, `/visibility`, and the
+    keyword table's per-row `source==='demo_seed'` badge (Phase 12).
+    Audited every remaining page (`/keywords`, `/brand-brain`) and left
+    them as-is: keywords already shows more granular PER-ROW demo
+    badges (which row is demo_seed vs. manually added) rather than a
+    redundant page-level one, and brand documents have no is_demo
+    concept at all in the schema.
+  - Environment note: neither `scripts/seed.ts` nor `scripts/migrate.ts`
+    can execute in this sandbox (no live Supabase/Postgres connection
+    configured) — confirmed the script fails with the expected
+    "DATABASE_URL is not set" message (via `npm run db:seed`, which
+    already carries the `NODE_OPTIONS=--conditions=react-server` fix
+    from Phase 12), not a crash or import error, meaning the script is
+    load-bearing-correct up to the point a real connection is required.
+  - Also discovered during this phase: `.env.example` is blocked from
+    both Read and Bash access in this sandbox by a blanket permission
+    rule on `.env*`-named files regardless of content — this will block
+    directly editing it in Phase 15; flagged there.
+  - Tests (33 files, 249/249 total passing):
+    - `tests/unit/seed-targets.test.ts` (4 tests) — the score-target
+      verification described above, run against the real pipeline
+      stages, real `computeArticleScores`, real `scoreKeywordSet`, real
+      `canPublish`, and the real demo visibility adapter + parser, using
+      the actual fixture data from `scripts/seed-data.ts`.
+  - `npm run typecheck`, `npm run lint`, `npm test` (33 files, 249/249
+    passing), and `npm run build` all pass clean after this phase.
 - [ ] Phase 14 — Tests/Lint/Build
 - [ ] Phase 15 — Documentation & Deployment
 
