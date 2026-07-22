@@ -121,10 +121,10 @@ export function KeywordTable({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto rounded-md border">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b text-left text-muted-foreground">
+            <tr className="border-b bg-muted/50 text-left text-muted-foreground">
               <SortableHeader label="Term" column="term" activeSort={sortBy} sortDir={sortDir} onSort={onSort} />
               <SortableHeader label="Volume" column="rawVolume" activeSort={sortBy} sortDir={sortDir} onSort={onSort} />
               <SortableHeader
@@ -141,30 +141,30 @@ export function KeywordTable({
                 sortDir={sortDir}
                 onSort={onSort}
               />
-              <th className="py-2">Source</th>
-              <th className="py-2">Actions</th>
+              <th className="px-3 py-2">Source</th>
+              <th className="px-3 py-2">Actions</th>
             </tr>
           </thead>
           <tbody>
             {result.items.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-6 text-center text-muted-foreground">
+                <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
                   No keywords yet.
                 </td>
               </tr>
             )}
             {result.items.map((kw) => (
-              <tr key={kw.id} className="border-b">
-                <td className="py-2 font-medium">{kw.term}</td>
-                <td className="py-2">{kw.rawVolume.toLocaleString()}</td>
-                <td className="py-2">{kw.rawDifficulty}</td>
-                <td className="py-2">
+              <tr key={kw.id} className="border-b last:border-b-0 hover:bg-muted/30">
+                <td className="px-3 py-2 font-medium">{kw.term}</td>
+                <td className="px-3 py-2 tabular-nums">{kw.rawVolume.toLocaleString()}</td>
+                <td className="px-3 py-2 tabular-nums">{kw.rawDifficulty}</td>
+                <td className="px-3 py-2 tabular-nums">
                   {kw.priorityScore !== null ? kw.priorityScore.toFixed(3) : "—"}
                 </td>
-                <td className="py-2 text-xs text-muted-foreground">
+                <td className="px-3 py-2 text-xs text-muted-foreground">
                   {kw.source === "demo_seed" ? <DataBadge kind="demo" /> : kw.source}
                 </td>
-                <td className="py-2">
+                <td className="px-3 py-2">
                   <div className="flex gap-2">
                     <Button
                       size="sm"
@@ -232,7 +232,7 @@ function SortableHeader({
 }) {
   const isActive = activeSort === column;
   return (
-    <th className="py-2">
+    <th className="px-3 py-2">
       <button
         type="button"
         onClick={() => onSort(column)}

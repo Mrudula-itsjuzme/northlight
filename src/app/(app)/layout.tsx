@@ -4,6 +4,7 @@ import { listBrandsForUser, getActiveBrandId } from "@/lib/brands/actions";
 import { BrandSwitcher } from "@/components/brands/brand-switcher";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { UserMenu } from "@/components/layout/user-menu";
+import { MobileNav } from "@/components/layout/mobile-nav";
 
 export default async function AppLayout({
   children,
@@ -28,8 +29,9 @@ export default async function AppLayout({
   }
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="flex w-64 shrink-0 flex-col border-r bg-card p-4">
+    <div className="flex min-h-screen flex-col lg:flex-row">
+      <MobileNav email={user.email ?? null} brands={brands} activeBrandId={activeBrandId} />
+      <aside className="hidden w-64 shrink-0 flex-col border-r bg-card p-4 lg:flex">
         <div className="mb-6 text-lg font-bold tracking-tight">Northlight</div>
         <div className="mb-6">
           <BrandSwitcher brands={brands} activeBrandId={activeBrandId} />
@@ -41,7 +43,7 @@ export default async function AppLayout({
           <UserMenu email={user.email ?? null} />
         </div>
       </aside>
-      <main className="flex-1 overflow-y-auto bg-background p-8">
+      <main className="flex-1 overflow-y-auto bg-background p-4 sm:p-6 lg:p-8">
         {children}
       </main>
     </div>

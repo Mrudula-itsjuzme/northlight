@@ -15,6 +15,14 @@ import { canPublish } from "@/lib/content/publish-gate";
 import type { BrandRole } from "@/lib/validation/brands";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+
+const STATUS_STYLES: Record<string, string> = {
+  draft: "bg-muted text-muted-foreground",
+  review: "bg-demo/10 text-demo",
+  approved: "bg-primary/10 text-primary",
+  published: "bg-success/10 text-success-foreground",
+};
 
 const AUTOSAVE_DEBOUNCE_MS = 1500;
 
@@ -133,17 +141,25 @@ export function ArticleEditor({
 
       <div className="space-y-4">
         <Card>
-          <CardHeader>
-            <CardTitle>Status: {article.status}</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <CardTitle>Status</CardTitle>
+            <span
+              className={cn(
+                "rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
+                STATUS_STYLES[article.status] ?? "bg-muted text-muted-foreground",
+              )}
+            >
+              {article.status}
+            </span>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="flex flex-col gap-2">
             {article.status === "draft" && (
               <Button size="sm" className="w-full" onClick={() => onTransition("review")}>
                 Move to review
               </Button>
             )}
             {article.status === "review" && (
-              <>
+              <div className="flex flex-col gap-2">
                 <Button size="sm" className="w-full" onClick={() => onTransition("approved")}>
                   Approve
                 </Button>
@@ -155,10 +171,10 @@ export function ArticleEditor({
                 >
                   Back to draft
                 </Button>
-              </>
+              </div>
             )}
             {article.status === "approved" && (
-              <>
+              <div className="flex flex-col gap-2">
                 {publishError && (
                   <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
                     {publishError}
@@ -175,7 +191,7 @@ export function ArticleEditor({
                 {!gatePreview.canPublish && (
                   <p className="text-xs text-muted-foreground">{gatePreview.reason}</p>
                 )}
-              </>
+              </div>
             )}
             {article.status === "published" && (
               <p className="text-sm text-success-foreground">Published.</p>
