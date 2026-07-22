@@ -9,8 +9,14 @@ next — all backed by one Supabase Postgres database with tenant
 isolation via Row Level Security.
 
 See `ARCHITECTURE.md` for the system design, `DATABASE.md` for the
-schema/RLS model, and `AI_SCORING.md` for every scoring/parsing formula
-with worked numeric examples.
+schema/RLS model, `AI_SCORING.md` for every scoring/parsing formula
+with worked numeric examples, and `SECURITY.md` for what's covered by
+this app's security hardening pass (RLS, rate limiting, upload
+validation, security headers) and what's explicitly out of scope for
+the MVP.
+
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, the full test
+suite, and a production build on every push and pull request.
 
 ## Stack
 
@@ -174,12 +180,42 @@ npm run db:seed
 
 ### 5. Deploy the app to Vercel
 
-1. Import the repository into Vercel.
-2. Set every variable from `.env.example` in Vercel's Project Settings ->
-   Environment Variables (matching the values from step 1, plus
-   `OPENAI_API_KEY` if you want real embeddings/generation instead of
-   demo adapters).
-3. Deploy. Vercel builds with `next build` and serves the app.
+**Note**: the steps below are exact instructions for *you* to follow in
+Vercel's own dashboard — connecting a Vercel project and entering real
+secret values requires your own Vercel/GitHub account access, which
+nothing in this repo or any automated process can do on your behalf.
+
+1. Go to [vercel.com/new](https://vercel.com/new) and import this
+   GitHub repository (`Mrudula-itsjuzme/northlight` or your fork).
+2. Framework preset: Vercel auto-detects **Next.js** from `package.json`
+   — no manual configuration needed. Leave the build command
+   (`next build`) and output directory at their defaults.
+3. Before the first deploy, open **Project Settings -> Environment
+   Variables** and add every row below (values come from step 1 above
+   and, for `JOBS_WORKER_SECRET`, any random string you generate
+   yourself, e.g. `openssl rand -hex 32`):
+
+   | Variable | Required? | What breaks / falls back if omitted |
+   |---|---|---|
+   | `NEXT_PUBLIC_SUPABASE_URL` | **Required** | App cannot reach Supabase at all; every page that touches the database throws. |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | **Required** | Same as above — auth and all RLS-scoped reads/writes fail without it. |
+   | `SUPABASE_SERVICE_ROLE_KEY` | **Required** | Background worker, Brand Brain document storage upload, and demo seeding lose privileged access; Brand Brain uploads still work (falls back to storing extracted text only, no original file in Storage — see the doc comment on `uploadBrandDocument`), but the worker and seed script cannot run. |
+   | `DATABASE_URL` | **Required** | Drizzle (typed queries used by every server action, the worker, and scripts) cannot connect; the app effectively cannot run. |
+   | `OPENAI_API_KEY` | Optional | Without it, Northlight runs entirely on deterministic demo adapters for embeddings, brief/article generation, and AI visibility checks — all clearly labeled "Demo" in the UI (see `DataBadge`). Northlight never calls a real provider without this key, and never fakes a "success" response from one. |
+   | `OPENAI_CHAT_MODEL` / `OPENAI_EMBEDDING_MODEL` | Optional | Only read if `OPENAI_API_KEY` is set; otherwise ignored. Default to `gpt-4o-mini` / `text-embedding-3-small` if unset. |
+   | `NEXT_PUBLIC_APP_URL` | Optional | Used to build absolute links (e.g. invite emails). Defaults to `http://localhost:3000`, which is wrong in production — set this to your real deployed URL. |
+   | `JOBS_WORKER_SECRET` | Required for the background worker | Without it, the worker route (step 6 below) cannot be safely exposed at a public URL; the rest of the app still works, but queued jobs (embeddings, pipeline runs, gap reports) never get processed. |
+
+   No new environment variable was introduced for this hardening pass's
+   rate limiter (`src/lib/rate-limit.ts`) — it is in-process and
+   configuration-free; see `SECURITY.md` for its documented limitation
+   under a multi-instance deployment.
+4. Click **Deploy**. Vercel builds with `next build` and serves the app;
+   every subsequent push to the connected branch redeploys automatically
+   via Vercel's own GitHub integration (this is separate from, and not
+   duplicated by, the CI workflow in `.github/workflows/ci.yml`, which
+   only runs lint/typecheck/test/build checks on push/PR and never
+   deploys anything).
 
 ### 6. Set up the background worker on a schedule
 
