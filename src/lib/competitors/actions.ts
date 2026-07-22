@@ -8,12 +8,11 @@ import { requireRoleOrThrow, RoleError } from "@/lib/brands/require-role";
 import {
   competitorSchema,
   competitorPageSchema,
-  gapReportTypes,
   type CompetitorInput,
   type CompetitorPageInput,
   type GapReportType,
 } from "@/lib/validation/competitors";
-import { generateGapReport } from "@/lib/competitors/gap-analysis";
+import { persistGapReportsForCompetitor } from "@/lib/competitors/persist-gap-reports";
 import type { ActionResult } from "@/lib/brands/types";
 
 function toActionError(err: unknown, fallback: string): ActionResult<never> {
@@ -200,34 +199,9 @@ export async function generateGapReportsForCompetitor(
 ): Promise<ActionResult<{ reportCount: number }>> {
   try {
     await requireRoleOrThrow(brandId, "editor");
-    const db = getDb();
-
-    const [competitor] = await db
-      .select({ id: competitors.id })
-      .from(competitors)
-      .where(and(eq(competitors.id, competitorId), eq(competitors.brandId, brandId)))
-      .limit(1);
-
-    if (!competitor) {
-      return { ok: false, error: "Competitor not found." };
-    }
-
-    const reports = gapReportTypes.map((type) => generateGapReport(brandId, competitorId, type));
-
-    await db.insert(gapReports).values(
-      reports.map((report) => ({
-        brandId,
-        competitorId,
-        type: report.type,
-        findings: { items: report.findings },
-        priorityScore: report.priorityScore,
-        isDemo: true,
-        generatedBy: "demo_adapter",
-      })),
-    );
-
+    const result = await persistGapReportsForCompetitor(brandId, competitorId);
     revalidatePath("/competitors");
-    return { ok: true, data: { reportCount: reports.length } };
+    return { ok: true, data: result };
   } catch (err) {
     return toActionError(err, "Failed to generate gap reports.");
   }
