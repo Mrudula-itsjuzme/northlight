@@ -777,7 +777,69 @@ to `brand_members`.
     real API shape but has never executed against the live endpoint.
   - `npm run typecheck`, `npm run lint`, `npm test` (26 files, 194/194
     passing), and `npm run build` all pass clean after this phase.
-- [ ] Phase 10 — Recommendations
+- [x] Phase 10 — Recommendations
+  - `src/lib/recommendations/rank.ts`: pure, deterministic
+    `rankRecommendations` — no LLM call — consuming normalized signals
+    from keywords (priority score), gap reports (competitor gap priority
+    score), articles (SEO/EEAT/AI-readiness), and AI visibility snapshots
+    (mention ratio per prompt). Each of the 4 source generators applies
+    its own inclusion threshold (keyword priority >= 0.5; every gap
+    included; articles excluded if published or already averaging >= 80
+    across its 3 scores; visibility prompts excluded if mentioned on
+    >= 50% of tracked platforms) and produces a
+    title/reason/evidence/impact/confidence/action/sourceSignal/rankScore
+    for each. `SOURCE_WEIGHTS` (keyword 0.3, competitor 0.3, content 0.2,
+    visibility 0.2, summing to 1) scale each source's normalized [0,1]
+    base score into the shared rankScore space before a single stable
+    sort (ties broken by original generation order:
+    keyword -> competitor -> content -> visibility) merges all 4 sources
+    into one ranked list.
+  - `src/lib/recommendations/actions.ts`: `computeRecommendations` (real
+    server action — gathers live signals via Drizzle from `keywords`,
+    `gapReports`/`competitors`, `articles`, and
+    `aiVisibilitySnapshots`/`aiPrompts`/`aiPlatforms`, ranks them, then
+    replaces the brand's full `recommendations` row set inside a
+    transaction — a full recompute rather than incremental merge, since
+    ranking is relative to the current complete signal set, consistent
+    with Phase 5's keyword-cluster recompute approach),
+    `listRecommendations`, `updateRecommendationStatus` (new/in_progress/
+    done/dismissed). All three call `requireRoleOrThrow` (viewer for
+    read, editor for write) — the same real authorization boundary used
+    by every prior phase's server actions, not a client-only check.
+  - `src/app/(app)/recommendations/page.tsx` +
+    `recommendation-list.tsx`: a real page (already linked from
+    `sidebar-nav.tsx`) listing ranked recommendations with impact/
+    confidence/source badges, a "Recompute recommendations" button
+    wired to `computeRecommendations`, and a per-row status `<select>`
+    wired to `updateRecommendationStatus` — no dead buttons or stub
+    handlers.
+  - The `recommendations` table, `recommendation_status` enum, and its
+    RLS policy were already present from Phase 1's initial schema
+    migration (`src/db/schema/growth.ts`,
+    `src/db/migrations/0000_sticky_secret_warriors.sql`,
+    `0001_rls_policies.sql`) as part of the full tenant-table set
+    scaffolded up front; Phase 10 wires the real ranking engine and UI
+    to that pre-existing table.
+  - Tests (28 files, 206/206 total passing):
+    - `tests/unit/recommendation-rank.test.ts` — empty-input case; a
+      hand-computed fixture asserting exact rankScore values per source
+      (gap 0.9*0.30=0.27, keyword 0.8*0.30=0.24, visibility
+      (2/3)*0.20=0.1333..., content ((100-60)/100)*0.20=0.08) and the
+      resulting sort order; determinism (identical input -> identical
+      output); exact-tie tie-breaking by generation order; each
+      source's exclusion threshold (low-priority keywords, published/
+      already-strong articles, majority-mentioned visibility prompts);
+      impact-level thresholds; and a fields-populated sanity check.
+    - `tests/integration/recommendations.test.ts` — extends the pglite
+      harness to prove ranked recommendations persist against the real
+      schema with all fields, that recompute replaces rather than
+      accumulates duplicate rows, and RLS isolates `recommendations`
+      between brands.
+  - Genuinely NOT exercised in this sandbox: no live Supabase session
+    for the server actions' `createClient()`/`requireRoleOrThrow` calls
+    end-to-end (same documented limitation as every prior phase).
+  - `npm run typecheck`, `npm run lint`, `npm test` (28 files, 206/206
+    passing), and `npm run build` all pass clean after this phase.
 - [ ] Phase 11 — Analytics
 - [ ] Phase 12 — Jobs/Usage/Error States
 - [ ] Phase 13 — Seed/Demo Data
