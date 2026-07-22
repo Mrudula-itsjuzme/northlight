@@ -9,6 +9,7 @@ import {
   type GapReportItem,
 } from "@/lib/competitors/actions";
 import { Button } from "@/components/ui/button";
+import { DataBadge } from "@/components/ui/data-badge";
 
 const GAP_TYPE_LABEL: Record<string, string> = {
   content: "Content",
@@ -113,11 +114,7 @@ export function CompetitorList({
                           {GAP_TYPE_LABEL[report.type] ?? report.type}
                         </p>
                         <div className="flex items-center gap-2">
-                          {report.isDemo && (
-                            <span className="rounded bg-demo/10 px-1.5 py-0.5 text-xs font-medium text-demo">
-                              Demo
-                            </span>
-                          )}
+                          {report.isDemo && <DataBadge kind="demo" />}
                           <span className="text-xs text-muted-foreground">
                             priority {report.priorityScore?.toFixed(2) ?? "—"}
                           </span>

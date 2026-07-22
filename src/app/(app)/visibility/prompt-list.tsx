@@ -14,6 +14,7 @@ import {
 } from "@/lib/ai/visibility/actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { DataBadge } from "@/components/ui/data-badge";
 
 export function PromptList({
   brandId,
@@ -110,11 +111,7 @@ export function PromptList({
                     <div key={snap.id} className="rounded border p-2 text-xs">
                       <div className="flex items-center justify-between">
                         <span className="font-medium">{snap.platformDisplayName}</span>
-                        {snap.isDemo && (
-                          <span className="rounded bg-demo/10 px-1 py-0.5 text-[10px] font-medium text-demo">
-                            Demo
-                          </span>
-                        )}
+                        {snap.isDemo && <DataBadge kind="demo" className="px-1 py-0.5 text-[10px]" />}
                       </div>
                       <p className="mt-1 text-muted-foreground">
                         {snap.mentioned ? `Mentioned (#${snap.position ?? "?"})` : "Not mentioned"}

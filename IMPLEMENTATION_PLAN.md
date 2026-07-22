@@ -840,7 +840,87 @@ to `brand_members`.
     end-to-end (same documented limitation as every prior phase).
   - `npm run typecheck`, `npm run lint`, `npm test` (28 files, 206/206
     passing), and `npm run build` all pass clean after this phase.
-- [ ] Phase 11 — Analytics
+- [x] Phase 11 — Analytics
+  - `src/lib/analytics/compute.ts`: pure, unit-testable aggregation
+    functions over already-fetched rows — article status breakdown,
+    articles generated/published counts, content velocity by ISO week,
+    median time-to-first-publish (odd/even count handling), estimated AI
+    cost (sums `content_pipeline_runs.totalCostCents`, converts to USD),
+    total tokens used, AI visibility mention-rate trend by week/platform,
+    keyword coverage ratio, average keyword priority score, and
+    completed-recommendations count. No database access in this file —
+    every function takes plain arrays so exact numeric assertions are
+    possible against hand-built fixtures.
+  - `src/lib/analytics/queries.ts`: `getAnalyticsSnapshot` — the real
+    server-side data-gathering layer. Role-gated (`requireRoleOrThrow`,
+    viewer), reads real rows via Drizzle from `articles`,
+    `content_pipeline_runs`, `keywords`, `content_briefs` (for keyword
+    coverage — a keyword counts as "covered" iff a content brief
+    references it via `keywordId`), `ai_visibility_snapshots` joined to
+    `ai_platforms`, and `recommendations`, then pipes them through
+    `compute.ts`. Also reads `brands.isDemo` so every page can render a
+    single "Demo" badge for demo brands. Demo traffic (organic/AI-referral
+    sessions) is the ONE genuinely synthetic figure — no analytics
+    integration exists in this environment — and is deterministically
+    seeded from the brand id (stable across refreshes, not re-randomized,
+    and never hardcoded to a single constant) plus always rendered behind
+    a "Demo" badge, never presented as real traffic.
+  - `src/lib/analytics/data-labels.ts` + `src/components/ui/data-badge.tsx`:
+    the ONE reused live/estimated/demo labeling convention the plan
+    requires, aligned to the `success`/`warning`/`demo` color tokens
+    already defined in `tailwind.config.ts`/`globals.css` (the `demo`
+    purple token was already in ad hoc use on the Competitor Radar and AI
+    Visibility pages before this phase — this phase extracts that into
+    one `<DataBadge kind="live" | "estimated" | "demo" />` component and
+    retrofits those pre-existing ad hoc badges
+    (`competitors/page.tsx`, `competitors/competitor-list.tsx`,
+    `visibility/prompt-list.tsx`) to use it, so the same visual language
+    means the same thing everywhere rather than three separate
+    hand-rolled `<span>` styles).
+  - `src/app/(app)/analytics/page.tsx` + `analytics-charts.tsx`: a real
+    Recharts dashboard — stat tiles (articles generated/published, time
+    to first publish, estimated AI cost, keyword coverage, avg. priority,
+    AI visibility mention rate, recommendations completed), a bar chart
+    for content velocity, a bar chart for article status breakdown, a
+    line chart for the AI visibility trend (explicitly captioned
+    "directional only, never an official citation count"), and a demo
+    traffic panel permanently badged "Demo". Every stat tile carries its
+    own live/estimated/demo badge per the convention above.
+  - `src/app/(app)/dashboard/page.tsx`: replaced the Phase 0 placeholder
+    (a static "Analytics will appear here" card with an empty
+    `CardContent`) with a real summary reading the same
+    `getAnalyticsSnapshot` — articles published, keyword coverage, AI
+    visibility mention rate, open recommendations — plus links to the
+    full Analytics/Recommendations/Keywords pages. No more dead
+    placeholder content on the app's landing page.
+  - Tests (30 files, 229/229 total passing):
+    - `tests/unit/analytics-compute.test.ts` — exact numeric fixtures for
+      every aggregation function: cents-to-USD rounding, status
+      breakdown including zero-count keys, ISO-week bucketing, median
+      time-to-publish for both odd and even sample counts, summed cost/
+      tokens, per-platform-per-week mention rate, keyword coverage ratio
+      (including the zero-keyword no-division-by-zero case), average
+      priority score (ignoring nulls), and completed-recommendations
+      counting.
+    - `tests/integration/analytics.test.ts` — extends the pglite harness
+      to insert real `articles`/`content_briefs`/`content_pipeline_runs`
+      rows and prove the aggregation functions produce the exact same
+      numbers against real persisted/RLS-isolated data (not just
+      in-memory fixtures), including RLS isolating `articles` between
+      two brands.
+  - Acceptance note: verified against whatever real data exists in
+    dev/tests per the plan's instruction, since Phase 13's seed data
+    doesn't exist yet — every chart/tile degrades to an honest empty
+    state ("No published articles yet...", "N/A", etc.) rather than
+    fabricating numbers when a brand has no data yet. Revisit/confirm
+    once Phase 13 seed data lands (tracked there).
+  - Known pre-existing gap, NOT introduced by this phase: `sidebar-nav.tsx`
+    also links to `/settings`, which has no corresponding page and isn't
+    scoped by any phase in this plan — left as-is since it predates
+    Phase 10 and fixing it is out of scope for Phases 10-15; flagged here
+    for visibility rather than silently expanding scope.
+  - `npm run typecheck`, `npm run lint`, `npm test` (30 files, 229/229
+    passing), and `npm run build` all pass clean after this phase.
 - [ ] Phase 12 — Jobs/Usage/Error States
 - [ ] Phase 13 — Seed/Demo Data
 - [ ] Phase 14 — Tests/Lint/Build

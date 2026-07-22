@@ -1,6 +1,7 @@
 import { getActiveBrandId } from "@/lib/brands/actions";
 import { listCompetitors, listGapReports } from "@/lib/competitors/actions";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { DataBadge } from "@/components/ui/data-badge";
 import { AddCompetitorForm } from "./add-competitor-form";
 import { CompetitorList } from "./competitor-list";
 
@@ -25,11 +26,8 @@ export default async function CompetitorsPage() {
         <p className="text-muted-foreground">
           Track competitors and generate gap reports across content, schema,
           FAQ, backlink, and AI-citation opportunities.{" "}
-          <span className="rounded bg-demo/10 px-1.5 py-0.5 text-xs font-medium text-demo">
-            Demo analysis
-          </span>{" "}
-          — gap reports use a deterministic demo adapter, not a live crawl
-          or LLM call, unless noted otherwise.
+          <DataBadge kind="demo" /> — gap reports use a deterministic demo
+          adapter, not a live crawl or LLM call, unless noted otherwise.
         </p>
       </div>
 
