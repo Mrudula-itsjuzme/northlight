@@ -1133,7 +1133,43 @@ to `brand_members`.
       the actual fixture data from `scripts/seed-data.ts`.
   - `npm run typecheck`, `npm run lint`, `npm test` (33 files, 249/249
     passing), and `npm run build` all pass clean after this phase.
-- [ ] Phase 14 — Tests/Lint/Build
+- [x] Phase 14 — Tests, Lint, Typecheck, Build (final gate)
+  - Audited existing coverage against the plan's explicit required list:
+    - Keyword scoring formula (exact numeric fixtures): already covered
+      by `tests/unit/priority-scoring.test.ts` (hand-worked fixtures for
+      min/max/midpoint keywords with the exact expected priorityScore to
+      10 decimal places) + `tests/integration/keyword-scoring.test.ts`
+      (real-schema persistence). No gap.
+    - AI visibility parsing: already covered by
+      `tests/unit/visibility-parse.test.ts`. No gap.
+    - Recommendation ranking: already covered by
+      `tests/unit/recommendation-rank.test.ts`. No gap.
+    - Tenant isolation (Phase 1): already covered by
+      `tests/integration/tenant-isolation.test.ts`. No gap.
+    - Publish restrictions (Phase 8): already covered by
+      `tests/unit/publish-gate.test.ts` +
+      `tests/integration/publish-gate-persistence.test.ts`. No gap.
+    - Onboarding->article flow integration test: **genuinely missing**
+      until this phase — `tests/integration/onboarding-state.test.ts`
+      only covered onboarding STEP DERIVATION, not a full chained flow.
+  - Added `tests/integration/onboarding-to-article-flow.test.ts` — the
+    one real gap found. Explicitly documented in its own docstring as a
+    DATA-LAYER integration test rather than a full browser e2e, given
+    this sandbox has no Playwright/browser runtime and (consistent with
+    every other integration test in this suite) Drizzle's postgres-js
+    driver can't attach to pglite directly. Chains 9 real steps against
+    the real schema via pglite: brand creation -> store/product upload
+    -> brand document marked ready -> keyword seeded and scored via the
+    real `scoreKeywordSet` -> content brief -> all 8 real pipeline stage
+    functions run and persisted -> article + version persisted from
+    real pipeline output -> article scored via the real
+    `computeArticleScores` -> an unresolved claim blocks the real
+    `canPublish` gate -> resolving the claim unblocks it and the
+    publish/publications rows persist correctly. Every intermediate
+    assertion reads back the REAL persisted row, not an in-memory value.
+  - `npm run lint`, `npm run typecheck`, `npm test` (34 files, 250/250
+    passing), and `npm run build` all fully green — this phase's own
+    re-verified acceptance gate, per the plan's requirement.
 - [ ] Phase 15 — Documentation & Deployment
 
 ## Required Credentials (pause points)
