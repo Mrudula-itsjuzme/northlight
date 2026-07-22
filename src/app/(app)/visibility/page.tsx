@@ -2,11 +2,17 @@ import { getActiveBrandId } from "@/lib/brands/actions";
 import { listAiPrompts, listVisibilitySnapshots } from "@/lib/ai/visibility/actions";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { PromptList } from "./prompt-list";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function VisibilityPage() {
   const brandId = await getActiveBrandId();
   if (!brandId) {
-    return <p className="text-muted-foreground">Select a brand to continue.</p>;
+    return (
+      <EmptyState
+        title="Select a brand to continue"
+        description="Use the brand switcher in the top bar to choose or create a brand."
+      />
+    );
   }
 
   const [promptsResult, snapshotsResult] = await Promise.all([

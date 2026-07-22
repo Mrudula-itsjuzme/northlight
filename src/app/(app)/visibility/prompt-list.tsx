@@ -15,6 +15,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { DataBadge } from "@/components/ui/data-badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Eye } from "lucide-react";
 
 export function PromptList({
   brandId,
@@ -76,7 +78,11 @@ export function PromptList({
       </form>
 
       {prompts.length === 0 && (
-        <p className="text-sm text-muted-foreground">No prompts configured yet.</p>
+        <EmptyState
+          icon={Eye}
+          title="No prompts configured yet"
+          description="Add a prompt above (e.g. a question a customer might ask an AI assistant), then run a snapshot to check visibility across all 6 platforms."
+        />
       )}
 
       <div className="space-y-3">

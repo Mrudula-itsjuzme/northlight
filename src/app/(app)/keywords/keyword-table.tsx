@@ -11,6 +11,7 @@ import {
 } from "@/lib/keywords/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DataBadge } from "@/components/ui/data-badge";
 
 type SortBy = "priorityScore" | "rawVolume" | "rawDifficulty" | "term" | "createdAt";
 
@@ -160,7 +161,9 @@ export function KeywordTable({
                 <td className="py-2">
                   {kw.priorityScore !== null ? kw.priorityScore.toFixed(3) : "—"}
                 </td>
-                <td className="py-2 text-xs text-muted-foreground">{kw.source}</td>
+                <td className="py-2 text-xs text-muted-foreground">
+                  {kw.source === "demo_seed" ? <DataBadge kind="demo" /> : kw.source}
+                </td>
                 <td className="py-2">
                   <div className="flex gap-2">
                     <Button

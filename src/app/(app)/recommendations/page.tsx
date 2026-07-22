@@ -2,11 +2,18 @@ import { getActiveBrandId } from "@/lib/brands/actions";
 import { listRecommendations } from "@/lib/recommendations/actions";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { RecommendationList } from "./recommendation-list";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 
 export default async function RecommendationsPage() {
   const brandId = await getActiveBrandId();
   if (!brandId) {
-    return <p className="text-muted-foreground">Select a brand to continue.</p>;
+    return (
+      <EmptyState
+        title="Select a brand to continue"
+        description="Use the brand switcher in the top bar to choose or create a brand."
+      />
+    );
   }
 
   const result = await listRecommendations(brandId);
@@ -23,9 +30,7 @@ export default async function RecommendationsPage() {
       </div>
 
       {!result.ok && (
-        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {result.error}
-        </div>
+        <ErrorState message={result.error} />
       )}
 
       <Card>

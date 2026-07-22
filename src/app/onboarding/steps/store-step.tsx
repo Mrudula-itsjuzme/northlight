@@ -9,6 +9,7 @@ import { addStore } from "@/lib/onboarding/actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 
 export function StoreStep({ brandId }: { brandId: string }) {
   const router = useRouter();
@@ -45,9 +46,7 @@ export function StoreStep({ brandId }: { brandId: string }) {
         Tell us where your store lives so we can tailor recommendations.
       </p>
       {serverError && (
-        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {serverError}
-        </div>
+        <ErrorState message={serverError} />
       )}
       <div className="space-y-1.5">
         <Label htmlFor="platform">Platform</Label>

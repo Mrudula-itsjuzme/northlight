@@ -8,6 +8,8 @@ import {
   type RecommendationItem,
 } from "@/lib/recommendations/actions";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Lightbulb } from "lucide-react";
 
 const IMPACT_COLOR: Record<string, string> = {
   high: "text-destructive",
@@ -55,10 +57,11 @@ export function RecommendationList({
       </Button>
 
       {recommendations.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          No recommendations yet. Add keywords/competitors/content/visibility
-          data, then recompute.
-        </p>
+        <EmptyState
+          icon={Lightbulb}
+          title="No recommendations yet"
+          description="Add keywords, competitors, content, or AI visibility data, then click Recompute recommendations above."
+        />
       )}
 
       <div className="space-y-3">

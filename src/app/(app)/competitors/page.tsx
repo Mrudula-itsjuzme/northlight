@@ -4,11 +4,18 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { DataBadge } from "@/components/ui/data-badge";
 import { AddCompetitorForm } from "./add-competitor-form";
 import { CompetitorList } from "./competitor-list";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 
 export default async function CompetitorsPage() {
   const brandId = await getActiveBrandId();
   if (!brandId) {
-    return <p className="text-muted-foreground">Select a brand to continue.</p>;
+    return (
+      <EmptyState
+        title="Select a brand to continue"
+        description="Use the brand switcher in the top bar to choose or create a brand."
+      />
+    );
   }
 
   const [competitorsResult, gapReportsResult] = await Promise.all([
@@ -32,14 +39,10 @@ export default async function CompetitorsPage() {
       </div>
 
       {!competitorsResult.ok && (
-        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {competitorsResult.error}
-        </div>
+        <ErrorState message={competitorsResult.error} />
       )}
       {!gapReportsResult.ok && (
-        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {gapReportsResult.error}
-        </div>
+        <ErrorState message={gapReportsResult.error} />
       )}
 
       <Card>

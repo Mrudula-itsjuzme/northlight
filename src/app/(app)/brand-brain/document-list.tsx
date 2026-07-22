@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { deleteBrandDocument, reindexBrandDocument, type BrandDocumentSummary } from "@/lib/brand-brain/actions";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Sparkles } from "lucide-react";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pending",
@@ -44,7 +46,13 @@ export function DocumentList({
   }
 
   if (documents.length === 0) {
-    return <p className="text-sm text-muted-foreground">No documents uploaded yet.</p>;
+    return (
+      <EmptyState
+        icon={Sparkles}
+        title="No documents uploaded yet"
+        description="Upload a brand document above to start building your Brand Brain (chunked, embedded, and searchable)."
+      />
+    );
   }
 
   return (

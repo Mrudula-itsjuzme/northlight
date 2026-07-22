@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { uploadBrandDocument } from "@/lib/brand-brain/actions";
+import { ErrorState } from "@/components/ui/error-state";
 
 export function UploadDocumentForm({ brandId }: { brandId: string }) {
   const router = useRouter();
@@ -33,9 +34,7 @@ export function UploadDocumentForm({ brandId }: { brandId: string }) {
   return (
     <div className="space-y-2">
       {error && (
-        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
+        <ErrorState message={error} />
       )}
       <input
         ref={inputRef}

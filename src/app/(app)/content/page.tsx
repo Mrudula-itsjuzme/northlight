@@ -4,11 +4,18 @@ import { listKeywords } from "@/lib/keywords/actions";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { BriefList } from "./brief-list";
 import { GenerateBriefForm } from "./generate-brief-form";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 
 export default async function ContentPage() {
   const brandId = await getActiveBrandId();
   if (!brandId) {
-    return <p className="text-muted-foreground">Select a brand to continue.</p>;
+    return (
+      <EmptyState
+        title="Select a brand to continue"
+        description="Use the brand switcher in the top bar to choose or create a brand."
+      />
+    );
   }
 
   const [briefsResult, runsResult, keywordsResult] = await Promise.all([
@@ -36,9 +43,7 @@ export default async function ContentPage() {
       </div>
 
       {!briefsResult.ok && (
-        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {briefsResult.error}
-        </div>
+        <ErrorState message={briefsResult.error} />
       )}
 
       <Card>

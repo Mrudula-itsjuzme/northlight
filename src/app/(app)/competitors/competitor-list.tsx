@@ -10,6 +10,8 @@ import {
 } from "@/lib/competitors/actions";
 import { Button } from "@/components/ui/button";
 import { DataBadge } from "@/components/ui/data-badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Radar } from "lucide-react";
 
 const GAP_TYPE_LABEL: Record<string, string> = {
   content: "Content",
@@ -54,7 +56,13 @@ export function CompetitorList({
   }
 
   if (competitors.length === 0) {
-    return <p className="text-sm text-muted-foreground">No competitors added yet.</p>;
+    return (
+      <EmptyState
+        icon={Radar}
+        title="No competitors added yet"
+        description="Add a competitor above, then generate a gap report to see content, schema, FAQ, backlink, and AI-citation opportunities."
+      />
+    );
   }
 
   return (

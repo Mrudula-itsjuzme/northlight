@@ -12,6 +12,8 @@ import {
   type PipelineStepSummary,
 } from "@/lib/content/actions";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { FileText } from "lucide-react";
 
 const STAGE_LABEL: Record<string, string> = {
   research: "Research",
@@ -75,7 +77,13 @@ export function BriefList({
   }
 
   if (briefs.length === 0) {
-    return <p className="text-sm text-muted-foreground">No content briefs yet.</p>;
+    return (
+      <EmptyState
+        icon={FileText}
+        title="No content briefs yet"
+        description="Generate a brief from a keyword above to start the content pipeline."
+      />
+    );
   }
 
   return (

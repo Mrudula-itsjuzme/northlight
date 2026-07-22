@@ -12,6 +12,7 @@ import { addBrandDocumentText, skipBrandDocuments } from "@/lib/onboarding/actio
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 
 export function DocumentsStep({ brandId }: { brandId: string }) {
   const router = useRouter();
@@ -71,9 +72,7 @@ export function DocumentsStep({ brandId }: { brandId: string }) {
       </p>
 
       {serverError && (
-        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {serverError}
-        </div>
+        <ErrorState message={serverError} />
       )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 rounded-md border p-4" noValidate>

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createBriefForKeyword } from "@/lib/content/actions";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 
 export function GenerateBriefForm({
   brandId,
@@ -43,11 +44,7 @@ export function GenerateBriefForm({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {error && (
-        <div className="w-full rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
-      )}
+      {error && <ErrorState message={error} className="w-full" />}
       <select
         value={keywordId}
         onChange={(e) => setKeywordId(e.target.value)}

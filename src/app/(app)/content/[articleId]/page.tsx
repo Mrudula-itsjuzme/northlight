@@ -4,6 +4,8 @@ import { getArticleForEditor, listArticleClaims } from "@/lib/content/article-ac
 import { requireRole } from "@/lib/brands/require-role";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArticleEditor } from "./article-editor";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 
 export default async function ArticleEditorPage({
   params,
@@ -12,7 +14,12 @@ export default async function ArticleEditorPage({
 }) {
   const brandId = await getActiveBrandId();
   if (!brandId) {
-    return <p className="text-muted-foreground">Select a brand to continue.</p>;
+    return (
+      <EmptyState
+        title="Select a brand to continue"
+        description="Use the brand switcher in the top bar to choose or create a brand."
+      />
+    );
   }
 
   const supabase = createClient();
@@ -28,9 +35,7 @@ export default async function ArticleEditorPage({
 
   if (!articleResult.ok) {
     return (
-      <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-        {articleResult.error}
-      </div>
+      <ErrorState message={articleResult.error} />
     );
   }
 

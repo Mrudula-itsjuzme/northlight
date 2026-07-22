@@ -8,6 +8,7 @@ import { signup } from "@/lib/auth/actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 
 export function SignupForm() {
   const [serverError, setServerError] = useState<string | null>(null);
@@ -52,9 +53,7 @@ export function SignupForm() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
       {serverError && (
-        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {serverError}
-        </div>
+        <ErrorState message={serverError} />
       )}
       <div className="space-y-1.5">
         <Label htmlFor="fullName">Full name</Label>

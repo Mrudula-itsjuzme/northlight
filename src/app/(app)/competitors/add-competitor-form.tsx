@@ -9,6 +9,7 @@ import { createCompetitor } from "@/lib/competitors/actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 
 export function AddCompetitorForm({ brandId }: { brandId: string }) {
   const router = useRouter();
@@ -40,11 +41,7 @@ export function AddCompetitorForm({ brandId }: { brandId: string }) {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-wrap items-end gap-3" noValidate>
-      {serverError && (
-        <div className="w-full rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {serverError}
-        </div>
-      )}
+      {serverError && <ErrorState message={serverError} className="w-full" />}
       <div className="space-y-1.5">
         <Label htmlFor="name">Name</Label>
         <Input id="name" {...register("name")} />

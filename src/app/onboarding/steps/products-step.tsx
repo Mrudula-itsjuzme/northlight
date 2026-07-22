@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import type { CsvRowError } from "@/lib/csv/parse-products";
+import { ErrorState } from "@/components/ui/error-state";
 
 export function ProductsStep({ brandId }: { brandId: string }) {
   const router = useRouter();
@@ -77,9 +78,7 @@ export function ProductsStep({ brandId }: { brandId: string }) {
       </p>
 
       {serverError && (
-        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {serverError}
-        </div>
+        <ErrorState message={serverError} />
       )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 rounded-md border p-4" noValidate>

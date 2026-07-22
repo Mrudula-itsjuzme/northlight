@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { importKeywordsCsv, type ImportKeywordsCsvResult } from "@/lib/keywords/actions";
 import type { CsvRowError } from "@/lib/csv/parse-products";
+import { ErrorState } from "@/components/ui/error-state";
 
 export function ImportKeywordsForm({ brandId }: { brandId: string }) {
   const router = useRouter();
@@ -34,9 +35,7 @@ export function ImportKeywordsForm({ brandId }: { brandId: string }) {
 
   return (
     <div className="space-y-2">
-      {error && (
-        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>
-      )}
+      {error && <ErrorState message={error} />}
       <input
         ref={inputRef}
         type="file"

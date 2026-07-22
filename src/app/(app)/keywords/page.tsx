@@ -4,6 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { AddKeywordForm } from "./add-keyword-form";
 import { ImportKeywordsForm } from "./import-keywords-form";
 import { KeywordTable } from "./keyword-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 
 export default async function KeywordsPage({
   searchParams,
@@ -12,7 +14,12 @@ export default async function KeywordsPage({
 }) {
   const brandId = await getActiveBrandId();
   if (!brandId) {
-    return <p className="text-muted-foreground">Select a brand to continue.</p>;
+    return (
+      <EmptyState
+        title="Select a brand to continue"
+        description="Use the brand switcher in the top bar to choose or create a brand."
+      />
+    );
   }
 
   const page = Number.parseInt(searchParams.page ?? "1", 10) || 1;
@@ -44,9 +51,7 @@ export default async function KeywordsPage({
       </div>
 
       {!result.ok && (
-        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {result.error}
-        </div>
+        <ErrorState message={result.error} />
       )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { seedDemoKeywords } from "@/lib/onboarding/actions";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 
 export function KeywordsStep({ brandId }: { brandId: string }) {
   const router = useRouter();
@@ -37,9 +38,7 @@ export function KeywordsStep({ brandId }: { brandId: string }) {
         from the Keyword Explorer.
       </p>
       {error && (
-        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
+        <ErrorState message={error} />
       )}
       {seededCount !== null && (
         <div className="rounded-md bg-success/10 px-3 py-2 text-sm text-success-foreground">
