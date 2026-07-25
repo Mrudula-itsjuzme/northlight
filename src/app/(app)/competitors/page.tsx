@@ -6,6 +6,7 @@ import { AddCompetitorForm } from "./add-competitor-form";
 import { CompetitorList } from "./competitor-list";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
+import { Radar, PlusCircle } from "lucide-react";
 
 export default async function CompetitorsPage() {
   const brandId = await getActiveBrandId();
@@ -13,7 +14,7 @@ export default async function CompetitorsPage() {
     return (
       <EmptyState
         title="Select a brand to continue"
-        description="Use the brand switcher in the top bar to choose or create a brand."
+        description="Use the brand switcher in the left navigation sidebar to select or create a brand."
       />
     );
   }
@@ -27,41 +28,48 @@ export default async function CompetitorsPage() {
   const gapReports = gapReportsResult.ok ? gapReportsResult.data : [];
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Competitor Radar</h1>
-        <p className="text-muted-foreground">
-          Track competitors and generate gap reports across content, schema,
-          FAQ, backlink, and AI-citation opportunities.{" "}
-          <DataBadge kind="demo" /> — gap reports use a deterministic demo
-          adapter, not a live crawl or LLM call, unless noted otherwise.
-        </p>
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/60 pb-6">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <h1 className="text-3xl font-bold tracking-tight text-gradient-purple">Competitor Radar</h1>
+            <DataBadge kind="demo" />
+          </div>
+          <p className="text-sm text-muted-foreground max-w-3xl">
+            Track rival brands, map domain overlap, and run automated gap reports across content, schema, FAQ, backlink, and AI-citation vectors.
+          </p>
+        </div>
       </div>
 
-      {!competitorsResult.ok && (
-        <ErrorState message={competitorsResult.error} />
-      )}
-      {!gapReportsResult.ok && (
-        <ErrorState message={gapReportsResult.error} />
-      )}
+      {!competitorsResult.ok && <ErrorState message={competitorsResult.error} />}
+      {!gapReportsResult.ok && <ErrorState message={gapReportsResult.error} />}
 
-      <Card>
+      {/* Add Competitor */}
+      <Card glass>
         <CardHeader>
-          <CardTitle>Add a competitor</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <PlusCircle className="h-5 w-5 text-violet-400" /> Track New Competitor Domain
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <AddCompetitorForm brandId={brandId} />
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Competitors</CardTitle>
+      {/* Competitor Matrix & Reports */}
+      <Card glass>
+        <CardHeader className="border-b border-border/60 pb-4">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Radar className="h-5 w-5 text-cyan-400" /> Competitor Intelligence Radar ({competitors.length})
+            </CardTitle>
+          </div>
           <CardDescription>
-            Generate gap reports per competitor, or review existing findings.
+            Generate gap reports per competitor domain to isolate uncaptured market demand.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <CompetitorList brandId={brandId} competitors={competitors} gapReports={gapReports} />
         </CardContent>
       </Card>

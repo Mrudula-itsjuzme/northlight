@@ -2,20 +2,13 @@
 
 import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { UserMenu } from "@/components/layout/user-menu";
 import type { BrandListItem } from "@/lib/brands/actions";
 import { BrandSwitcher } from "@/components/brands/brand-switcher";
 
-/**
- * Mobile/tablet navigation: a hamburger button (visible below the `lg`
- * breakpoint, where the fixed sidebar in `AppLayout` is hidden) that opens
- * a slide-in drawer with the same brand switcher / nav links / user menu
- * as the desktop sidebar, via Radix Dialog (already a project dependency)
- * rather than introducing a new primitive.
- */
 export function MobileNav({
   email,
   brands,
@@ -29,33 +22,43 @@ export function MobileNav({
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
-      <div className="flex items-center justify-between border-b bg-card px-4 py-3 lg:hidden">
-        <div className="text-lg font-bold tracking-tight">Northlight</div>
+      <div className="flex items-center justify-between border-b border-border/80 glass-panel px-4 py-3 lg:hidden">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 via-purple-600 to-cyan-500 text-white shadow-glow-sm">
+            <Sparkles className="h-4 w-4" />
+          </div>
+          <span className="text-lg font-bold tracking-tight text-gradient-purple">Northlight</span>
+        </div>
         <Dialog.Trigger asChild>
           <Button variant="ghost" size="icon" aria-label="Open navigation menu">
-            <Menu className="h-5 w-5" />
+            <Menu className="h-5 w-5 text-foreground" />
           </Button>
         </Dialog.Trigger>
       </div>
 
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 lg:hidden" />
-        <Dialog.Content className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r bg-card p-4 shadow-lg lg:hidden">
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm lg:hidden animate-fade-in-up" />
+        <Dialog.Content className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-border/80 glass-panel p-5 shadow-2xl shadow-violet-500/20 lg:hidden">
           <div className="mb-6 flex items-center justify-between">
-            <Dialog.Title className="text-lg font-bold tracking-tight">Northlight</Dialog.Title>
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 via-purple-600 to-cyan-500 text-white shadow-glow-sm">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <Dialog.Title className="text-lg font-bold tracking-tight text-gradient-purple">Northlight</Dialog.Title>
+            </div>
             <Dialog.Close asChild>
               <Button variant="ghost" size="icon" aria-label="Close navigation menu">
-                <X className="h-5 w-5" />
+                <X className="h-5 w-5 text-muted-foreground" />
               </Button>
             </Dialog.Close>
           </div>
-          <div className="mb-6" onClick={() => setOpen(false)}>
+          <div className="mb-6 rounded-xl border border-border/60 bg-card/60 p-2 backdrop-blur-sm shadow-sm" onClick={() => setOpen(false)}>
             <BrandSwitcher brands={brands} activeBrandId={activeBrandId} />
           </div>
-          <div className="flex-1" onClick={() => setOpen(false)}>
+          <div className="flex-1 overflow-y-auto" onClick={() => setOpen(false)}>
             <SidebarNav />
           </div>
-          <div className="mt-6 border-t pt-4">
+          <div className="mt-6 border-t border-border/60 pt-4">
             <UserMenu email={email} />
           </div>
         </Dialog.Content>

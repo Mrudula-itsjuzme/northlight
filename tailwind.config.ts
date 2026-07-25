@@ -66,6 +66,19 @@ const config: Config = {
           DEFAULT: "hsl(var(--demo))",
           foreground: "hsl(var(--demo-foreground))",
         },
+        cyan: {
+          DEFAULT: "hsl(var(--cyan-accent, 188 95% 52%))",
+        },
+        rose: {
+          DEFAULT: "hsl(var(--rose-accent, 338 85% 60%))",
+        },
+      },
+      boxShadow: {
+        "glow-sm": "0 0 15px -3px rgba(139, 92, 246, 0.2)",
+        "glow": "0 0 25px -4px rgba(139, 92, 246, 0.35)",
+        "glow-lg": "0 0 40px -5px rgba(139, 92, 246, 0.45)",
+        "glow-cyan": "0 0 25px -4px rgba(6, 182, 212, 0.35)",
+        "glow-emerald": "0 0 25px -4px rgba(16, 185, 129, 0.35)",
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -81,10 +94,15 @@ const config: Config = {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        "fade-in-up": {
+          "0%": { opacity: "0", transform: "translateY(10px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "fade-in-up": "fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards",
       },
     },
   },

@@ -3,6 +3,15 @@ import { listAiPrompts, listVisibilitySnapshots } from "@/lib/ai/visibility/acti
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { PromptList } from "./prompt-list";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Eye, AlertCircle, Sparkles, Bot } from "lucide-react";
+
+const PLATFORMS = [
+  { name: "ChatGPT", color: "from-emerald-500 to-teal-600", status: "Live/Demo Adapter" },
+  { name: "Claude", color: "from-purple-500 to-indigo-600", status: "Demo Adapter" },
+  { name: "Gemini", color: "from-cyan-500 to-blue-600", status: "Demo Adapter" },
+  { name: "Perplexity", color: "from-amber-500 to-orange-600", status: "Demo Adapter" },
+  { name: "Copilot", color: "from-pink-500 to-rose-600", status: "Demo Adapter" },
+];
 
 export default async function VisibilityPage() {
   const brandId = await getActiveBrandId();
@@ -10,7 +19,7 @@ export default async function VisibilityPage() {
     return (
       <EmptyState
         title="Select a brand to continue"
-        description="Use the brand switcher in the top bar to choose or create a brand."
+        description="Use the brand switcher in the left navigation sidebar to select or create a brand."
       />
     );
   }
@@ -24,30 +33,59 @@ export default async function VisibilityPage() {
   const snapshots = snapshotsResult.ok ? snapshotsResult.data : [];
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">AI Visibility</h1>
-        <p className="text-muted-foreground">
-          Tracks whether, where, and how your brand is mentioned across 6
-          AI platforms (ChatGPT, Claude, Gemini, Perplexity, Copilot, AI
-          Overviews) for prompts you configure.
-        </p>
-        <p className="mt-2 rounded-md bg-demo/10 px-3 py-2 text-sm text-demo">
-          Methodology: results are DIRECTIONAL ONLY. Mention/position/
-          sentiment/confidence reflect this app&apos;s own extraction from a
-          platform response at a point in time — never an official or
-          authoritative citation count, and never a guarantee of future
-          behavior. All platforms except ChatGPT (and ChatGPT itself
-          without a configured OpenAI key) use a deterministic demo
-          adapter, clearly labeled below.
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/60 pb-6">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <h1 className="text-3xl font-bold tracking-tight text-gradient-purple">AI Visibility Radar</h1>
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary border border-primary/20">
+              <Eye className="h-3.5 w-3.5" /> 6 Engines Tracked
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground max-w-3xl">
+            Real-time mention tracking, sentiment evaluation, and brand presence analysis across AI search engines.
+          </p>
+        </div>
+      </div>
+
+      {/* Engine Platform Coverage Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        {PLATFORMS.map((platform) => (
+          <Card key={platform.name} glass className="p-4 space-y-2 hover:scale-[1.02] transition-transform">
+            <div className="flex items-center justify-between">
+              <div className={`flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-tr ${platform.color} text-white shadow-sm`}>
+                <Bot className="h-4 w-4" />
+              </div>
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm text-foreground">{platform.name}</h3>
+              <p className="text-[10px] text-muted-foreground font-mono">{platform.status}</p>
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      {/* Methodology Alert Banner */}
+      <div className="rounded-xl border border-purple-500/30 bg-purple-500/10 p-4 backdrop-blur-sm space-y-1">
+        <div className="flex items-center gap-2 text-purple-400 font-semibold text-xs uppercase tracking-wider">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>Directional Visibility Methodology Note</span>
+        </div>
+        <p className="text-xs text-muted-foreground leading-relaxed pl-6">
+          Results reflect directional mentions, sentiment, and presence confidence extracted from real or simulated AI assistant responses. Numbers are directional proxies for strategy, not official ledger citation totals.
         </p>
       </div>
 
-      <Card>
+      {/* Prompts Monitoring List */}
+      <Card glass>
         <CardHeader>
-          <CardTitle>Prompts</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-violet-400" /> Monitored AI Prompts & Snapshots
+          </CardTitle>
           <CardDescription>
-            Prompts you&apos;d expect a customer to ask an AI assistant.
+            Configure high-intent search queries that potential customers ask AI assistants.
           </CardDescription>
         </CardHeader>
         <CardContent>

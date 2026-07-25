@@ -1,18 +1,23 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
-    <div
-      ref={ref}
-      className={cn(
-        "rounded-lg border bg-card text-card-foreground shadow-sm",
-        className,
-      )}
-      {...props}
-    />
-  ),
-);
+const Card = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement> & { glass?: boolean; hoverGlow?: boolean }
+>(({ className, glass = false, hoverGlow = true, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn(
+      "rounded-xl border text-card-foreground transition-all duration-300",
+      glass
+        ? "glass-card"
+        : "bg-card/90 border-border/80 shadow-sm shadow-black/5 dark:shadow-black/20",
+      hoverGlow && "hover:border-primary/30 hover:shadow-md hover:shadow-primary/5",
+      className,
+    )}
+    {...props}
+  />
+));
 Card.displayName = "Card";
 
 const CardHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
@@ -24,14 +29,18 @@ CardHeader.displayName = "CardHeader";
 
 const CardTitle = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HTMLHeadingElement>>(
   ({ className, ...props }, ref) => (
-    <h3 ref={ref} className={cn("text-lg font-semibold leading-none tracking-tight", className)} {...props} />
+    <h3
+      ref={ref}
+      className={cn("text-lg font-semibold leading-none tracking-tight text-foreground/95", className)}
+      {...props}
+    />
   ),
 );
 CardTitle.displayName = "CardTitle";
 
 const CardDescription = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HTMLParagraphElement>>(
   ({ className, ...props }, ref) => (
-    <p ref={ref} className={cn("text-sm text-muted-foreground", className)} {...props} />
+    <p ref={ref} className={cn("text-sm text-muted-foreground/90 leading-relaxed", className)} {...props} />
   ),
 );
 CardDescription.displayName = "CardDescription";

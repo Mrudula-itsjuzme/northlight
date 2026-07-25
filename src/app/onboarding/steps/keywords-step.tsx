@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { seedDemoKeywords } from "@/lib/onboarding/actions";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
+import { Sparkles, CheckCircle2, Rocket } from "lucide-react";
 
 export function KeywordsStep({ brandId }: { brandId: string }) {
   const router = useRouter();
@@ -24,30 +25,41 @@ export function KeywordsStep({ brandId }: { brandId: string }) {
       setSeededCount(result.data.count);
       router.push("/dashboard");
       router.refresh();
+    } catch (err) {
+      if (typeof err === "object" && err !== null && "message" in err && String(err.message).includes("NEXT_REDIRECT")) {
+        return;
+      }
+      setError(err instanceof Error ? err.message : "Failed to seed demo keywords.");
     } finally {
       setPending(false);
     }
   }
 
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        We&apos;ll seed a handful of demo keywords with realistic volume,
-        difficulty, and intent data so you can explore priority scoring
-        immediately. You can add your own keywords or import a CSV anytime
-        from the Keyword Explorer.
+    <div className="space-y-6">
+      <p className="text-sm text-muted-foreground leading-relaxed">
+        We&apos;ll seed demo keywords with realistic volume, difficulty, and commercial intent so you can explore priority scoring immediately.
       </p>
-      {error && (
-        <ErrorState message={error} />
-      )}
+
+      {error && <ErrorState message={error} />}
+
       {seededCount !== null && (
-        <div className="rounded-md bg-success/10 px-3 py-2 text-sm text-success-foreground">
-          Seeded {seededCount} demo keywords.
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-300 flex items-center gap-2 font-semibold">
+          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" /> Seeded {seededCount} demo keywords.
         </div>
       )}
-      <div className="flex justify-end">
-        <Button onClick={onSeed} disabled={pending}>
-          {pending ? "Seeding..." : "Seed demo keywords & finish"}
+
+      <div className="flex justify-end pt-2">
+        <Button onClick={onSeed} disabled={pending} variant="gradient" className="shadow-glow gap-2">
+          {pending ? (
+            <>
+              <Sparkles className="h-4 w-4 animate-spin" /> Seeding Demo Keywords...
+            </>
+          ) : (
+            <>
+              <Rocket className="h-4 w-4" /> Seed Demo Keywords & Launch Dashboard
+            </>
+          )}
         </Button>
       </div>
     </div>

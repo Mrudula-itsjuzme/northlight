@@ -27,15 +27,15 @@ function StatTile({
   helpText?: string;
 }) {
   return (
-    <div className="rounded-md border p-4">
+    <div className="glass-card rounded-xl border border-border/80 p-5 space-y-2 transition-all duration-300 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           {label}
         </p>
         <DataBadge kind={provenance} />
       </div>
-      <p className="mt-2 text-2xl font-bold">{value}</p>
-      {helpText && <p className="mt-1 text-xs text-muted-foreground">{helpText}</p>}
+      <p className="text-3xl font-extrabold tracking-tight text-foreground">{value}</p>
+      {helpText && <p className="text-xs text-muted-foreground/90 leading-relaxed">{helpText}</p>}
     </div>
   );
 }
@@ -69,7 +69,8 @@ export function AnalyticsCharts({ data }: { data: AnalyticsSnapshot }) {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      {/* 8 Stat Tiles Matrix */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile
           label="Articles generated"
@@ -82,26 +83,26 @@ export function AnalyticsCharts({ data }: { data: AnalyticsSnapshot }) {
           provenance="live"
         />
         <StatTile
-          label="Median time to first publish"
+          label="Time to first publish"
           value={
             data.articles.medianTimeToFirstPublishHours === null
               ? "N/A"
               : `${data.articles.medianTimeToFirstPublishHours.toFixed(1)}h`
           }
           provenance="live"
-          helpText="Median hours from article creation to first publish."
+          helpText="Median hours from creation to first publish."
         />
         <StatTile
           label="Estimated AI cost"
           value={`$${data.cost.estimatedUsd.toFixed(2)}`}
           provenance="estimated"
-          helpText={`${data.cost.totalTokens.toLocaleString()} tokens across ${data.cost.completedRunCount} completed pipeline runs.`}
+          helpText={`${data.cost.totalTokens.toLocaleString()} tokens across ${data.cost.completedRunCount} runs.`}
         />
         <StatTile
           label="Keyword coverage"
           value={`${data.keywords.covered}/${data.keywords.total}`}
           provenance="live"
-          helpText={`${(data.keywords.coverageRatio * 100).toFixed(0)}% of keywords have a linked content brief.`}
+          helpText={`${(data.keywords.coverageRatio * 100).toFixed(0)}% of keywords mapped to briefs.`}
         />
         <StatTile
           label="Avg. keyword priority"
@@ -113,122 +114,156 @@ export function AnalyticsCharts({ data }: { data: AnalyticsSnapshot }) {
           provenance="live"
         />
         <StatTile
-          label="AI visibility mention rate"
+          label="AI mention rate"
           value={
             data.visibility.overallMentionRate === null
               ? "N/A"
               : `${(data.visibility.overallMentionRate * 100).toFixed(0)}%`
           }
           provenance="estimated"
-          helpText={`Directional proxy only, never an official citation count. ${data.visibility.totalSnapshots} snapshots observed.`}
+          helpText={`Directional mention proxy (${data.visibility.totalSnapshots} snapshots).`}
         />
         <StatTile
-          label="Recommendations completed"
+          label="Recommendations done"
           value={`${data.recommendations.done}/${data.recommendations.total}`}
           provenance="live"
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
+      {/* Recharts Data Visualization Grid */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card glass>
           <CardHeader>
-            <CardTitle>Content velocity</CardTitle>
-            <CardDescription>Articles published per week.</CardDescription>
+            <CardTitle>Content Velocity Trend</CardTitle>
+            <CardDescription>Articles published per week across campaigns.</CardDescription>
           </CardHeader>
           <CardContent>
             {velocityData.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No published articles yet — publish an article to see velocity here.
+              <p className="text-sm text-muted-foreground py-10 text-center">
+                No published articles yet — publish an article to see velocity trends here.
               </p>
             ) : (
-              <ResponsiveContainer width="100%" height={240}>
+              <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={velocityData}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="week" tick={{ fontSize: 12 }} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                  <Tooltip />
-                  <Bar dataKey="count" name="Published" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(160,160,175,0.15)" />
+                  <XAxis dataKey="week" tick={{ fontSize: 11, fill: "rgba(160,160,175,0.8)" }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "rgba(160,160,175,0.8)" }} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "rgba(15, 15, 22, 0.9)",
+                      borderColor: "rgba(255, 255, 255, 0.15)",
+                      borderRadius: "12px",
+                      color: "#fff",
+                      boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+                    }}
+                  />
+                  <Bar dataKey="count" name="Published" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card glass>
           <CardHeader>
-            <CardTitle>Article statuses</CardTitle>
-            <CardDescription>Current lifecycle breakdown across all articles.</CardDescription>
+            <CardTitle>Article Status Breakdown</CardTitle>
+            <CardDescription>Current stage distribution across all pipeline articles.</CardDescription>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={240}>
+            <ResponsiveContainer width="100%" height={260}>
               <BarChart data={statusData}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="status" tick={{ fontSize: 12 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Bar dataKey="count" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(160,160,175,0.15)" />
+                <XAxis dataKey="status" tick={{ fontSize: 11, fill: "rgba(160,160,175,0.8)" }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "rgba(160,160,175,0.8)" }} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "rgba(15, 15, 22, 0.9)",
+                    borderColor: "rgba(255, 255, 255, 0.15)",
+                    borderRadius: "12px",
+                    color: "#fff",
+                    boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+                  }}
+                />
+                <Bar dataKey="count" fill="#06b6d4" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card glass>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>AI visibility trend</CardTitle>
+              <CardTitle>AI Visibility Mention Trend</CardTitle>
               <DataBadge kind="estimated" />
             </div>
             <CardDescription>
-              Average mention rate per week across tracked prompts/platforms.
-              Directional only — never an official citation count.
+              Average mention rate over time across AI Search engines.
             </CardDescription>
           </CardHeader>
           <CardContent>
             {visibilityData.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No visibility snapshots yet — run a snapshot on the AI Visibility page.
+              <p className="text-sm text-muted-foreground py-10 text-center">
+                No visibility snapshots yet — trigger a snapshot on the AI Visibility page.
               </p>
             ) : (
-              <ResponsiveContainer width="100%" height={240}>
+              <ResponsiveContainer width="100%" height={260}>
                 <LineChart data={visibilityData}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="week" tick={{ fontSize: 12 }} />
-                  <YAxis domain={[0, 1]} tickFormatter={(v) => `${Math.round(v * 100)}%`} tick={{ fontSize: 12 }} />
-                  <Tooltip formatter={(v) => `${(Number(v) * 100).toFixed(0)}%`} />
-                  <Line type="monotone" dataKey="mentionRate" name="Mention rate" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(160,160,175,0.15)" />
+                  <XAxis dataKey="week" tick={{ fontSize: 11, fill: "rgba(160,160,175,0.8)" }} />
+                  <YAxis
+                    domain={[0, 1]}
+                    tickFormatter={(v) => `${Math.round(v * 100)}%`}
+                    tick={{ fontSize: 11, fill: "rgba(160,160,175,0.8)" }}
+                  />
+                  <Tooltip
+                    formatter={(v) => `${(Number(v) * 100).toFixed(0)}%`}
+                    contentStyle={{
+                      backgroundColor: "rgba(15, 15, 22, 0.9)",
+                      borderColor: "rgba(255, 255, 255, 0.15)",
+                      borderRadius: "12px",
+                      color: "#fff",
+                      boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="mentionRate"
+                    name="Mention Rate"
+                    stroke="#10b981"
+                    strokeWidth={3}
+                    dot={{ fill: "#10b981", r: 4 }}
+                  />
                 </LineChart>
               </ResponsiveContainer>
             )}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card glass>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Traffic (last 30 days)</CardTitle>
+              <CardTitle>Traffic Snapshot (30 Days)</CardTitle>
               <DataBadge kind="demo" />
             </div>
             <CardDescription>
-              No organic/AI-referral analytics integration is configured in
-              this environment — these figures are deterministic demo
-              placeholders, not real traffic.
+              Deterministic organic and AI-referral sessions estimation model.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Organic sessions
+            <div className="grid grid-cols-2 gap-4 py-4">
+              <div className="rounded-xl border border-border/60 bg-card/40 p-4 space-y-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Organic Sessions
                 </p>
-                <p className="mt-1 text-2xl font-bold">
+                <p className="text-3xl font-extrabold text-foreground">
                   {data.demoTraffic.organicSessionsLast30d.toLocaleString()}
                 </p>
               </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  AI-referral sessions
+              <div className="rounded-xl border border-border/60 bg-card/40 p-4 space-y-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  AI-Referral Sessions
                 </p>
-                <p className="mt-1 text-2xl font-bold">
+                <p className="text-3xl font-extrabold text-foreground">
                   {data.demoTraffic.aiReferralSessionsLast30d.toLocaleString()}
                 </p>
               </div>
