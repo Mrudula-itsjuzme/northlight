@@ -73,21 +73,6 @@ export async function createBrand(
 
   try {
     const brandId = await db.transaction(async (tx) => {
-      // Ensure user profile exists in public.profiles table before creating brand
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      await tx
-        .insert(profiles)
-        .values({
-          id: userId,
-          email: user?.email ?? "",
-          fullName: user?.user_metadata?.full_name ?? null,
-        })
-        .onConflictDoNothing();
-
       const [brand] = await tx
         .insert(brands)
         .values({
