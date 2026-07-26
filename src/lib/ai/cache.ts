@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash } from "crypto";
-import { eq, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { aiSemanticCache } from "@/db/schema";
 
@@ -16,6 +16,26 @@ export type CacheLookupInput = {
 };
 
 /**
+ * Recursively canonicalizes JSON values by sorting object keys alphabetically.
+ * Ensures deterministic stringification regardless of property insertion order.
+ */
+export function canonicalizeJsonPayload(val: unknown): unknown {
+  if (val === null || typeof val !== "object") {
+    return val;
+  }
+  if (Array.isArray(val)) {
+    return val.map(canonicalizeJsonPayload);
+  }
+  const obj = val as Record<string, unknown>;
+  const sortedKeys = Object.keys(obj).sort();
+  const sortedObj: Record<string, unknown> = {};
+  for (const k of sortedKeys) {
+    sortedObj[k] = canonicalizeJsonPayload(obj[k]);
+  }
+  return sortedObj;
+}
+
+/**
  * Computes deterministic SHA256 hash key for semantic cache matching.
  */
 export function computeCacheHash(input: CacheLookupInput): string {
@@ -27,37 +47,38 @@ export function computeCacheHash(input: CacheLookupInput): string {
     executionMode: input.executionMode,
     model: input.model,
     provider: input.provider,
-    payload: input.requestPayload,
+    payload: canonicalizeJsonPayload(input.requestPayload),
   });
   return createHash("sha256").update(canonicalPayload).digest("hex");
 }
 
 /**
  * Retrieves cached LLM stage output if hit exists and is valid.
+ * Strictly scopes by both requestHash AND brandId for tenant isolation.
  */
 export async function getCachedLlmOutput<T extends Record<string, unknown>>(
   input: CacheLookupInput,
 ): Promise<{ hit: boolean; data?: T; tokensSaved?: number; costSavedCents?: number }> {
   const hash = computeCacheHash(input);
-  const db = getDb();
 
   try {
+    const db = getDb();
     const [entry] = await db
       .select()
       .from(aiSemanticCache)
-      .where(eq(aiSemanticCache.requestHash, hash))
+      .where(and(eq(aiSemanticCache.requestHash, hash), eq(aiSemanticCache.brandId, input.brandId)))
       .limit(1);
 
     if (!entry) return { hit: false };
 
-    // Increment hit count asynchronously
-    await db
-      .update(aiSemanticCache)
+    // Increment hit count asynchronously without blocking or failing read on error
+    db.update(aiSemanticCache)
       .set({
         hitCount: sql`${aiSemanticCache.hitCount} + 1`,
         updatedAt: new Date(),
       })
-      .where(eq(aiSemanticCache.id, entry.id));
+      .where(eq(aiSemanticCache.id, entry.id))
+      .catch(() => {});
 
     return {
       hit: true,
@@ -80,9 +101,9 @@ export async function setCachedLlmOutput(
   costSavedCents = 0,
 ): Promise<void> {
   const hash = computeCacheHash(input);
-  const db = getDb();
 
   try {
+    const db = getDb();
     await db
       .insert(aiSemanticCache)
       .values({
@@ -115,8 +136,8 @@ export async function setCachedLlmOutput(
  * Invalidates cache for a brand when brand brain documents or prompts change.
  */
 export async function invalidateBrandCache(brandId: string): Promise<void> {
-  const db = getDb();
   try {
+    const db = getDb();
     await db.delete(aiSemanticCache).where(eq(aiSemanticCache.brandId, brandId));
   } catch {
     // Silent fail
@@ -132,8 +153,8 @@ export async function getCacheMetrics(brandId?: string): Promise<{
   totalTokensSaved: number;
   totalCostSavedCents: number;
 }> {
-  const db = getDb();
   try {
+    const db = getDb();
     const query = brandId
       ? db.select({
           entries: sql<number>`count(*)::int`,

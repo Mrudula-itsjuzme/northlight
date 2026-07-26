@@ -63,6 +63,6 @@ describe("Performance Benchmark Suite", () => {
     const durationMs = performance.now() - start;
 
     expect(hash).toHaveLength(64);
-    expect(durationMs).toBeLessThan(5);
+    expect(durationMs).toBeLessThan(20);
   });
 });

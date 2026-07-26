@@ -1,5 +1,5 @@
 import "server-only";
-import type { PipelineStage } from "@/db/schema/enums";
+import type { PipelineStage } from "@/lib/content/pipeline/schemas";
 
 export type ModelRoutingDecision = {
   model: string;
@@ -8,7 +8,9 @@ export type ModelRoutingDecision = {
   estimatedCostMultiplier: number;
 };
 
-const STAGE_MODEL_MAP: Record<PipelineStage, ModelRoutingDecision> = {
+const VALID_MODELS = new Set(["gpt-4o-mini", "gpt-4o", "o3-mini", "o1-mini", "gpt-4-turbo"]);
+
+const STAGE_MODEL_MAP: Record<string, ModelRoutingDecision> = {
   research: {
     model: "gpt-4o-mini",
     provider: "openai",
@@ -61,22 +63,28 @@ const STAGE_MODEL_MAP: Record<PipelineStage, ModelRoutingDecision> = {
 
 /**
  * Resolves optimal model and provider routing based on pipeline stage complexity.
+ * Normalizes stage key names and validates environment overrides.
  */
-export function resolveModelRouting(stage: PipelineStage): ModelRoutingDecision {
-  const customModelEnv = process.env[`MODEL_OVERRIDE_${stage.toUpperCase()}`];
-  if (customModelEnv) {
+export function resolveModelRouting(stage: PipelineStage | string): ModelRoutingDecision {
+  const normalizedStage = String(stage || "")
+    .toLowerCase()
+    .trim()
+    .replace(/-/g, "_");
+
+  const customModelEnv = process.env[`MODEL_OVERRIDE_${normalizedStage.toUpperCase()}`];
+  if (customModelEnv && VALID_MODELS.has(customModelEnv)) {
     return {
       model: customModelEnv,
       provider: "openai",
-      routingReason: `Environment model override specified for stage "${stage}".`,
+      routingReason: `Validated environment model override specified for stage "${normalizedStage}".`,
       estimatedCostMultiplier: 1.0,
     };
   }
 
-  return STAGE_MODEL_MAP[stage] || {
+  return STAGE_MODEL_MAP[normalizedStage] || {
     model: "gpt-4o-mini",
     provider: "openai",
-    routingReason: "Default cost-optimized fallback model.",
+    routingReason: "Default cost-optimized fallback model for unrecognized or custom pipeline stage.",
     estimatedCostMultiplier: 0.1,
   };
 }

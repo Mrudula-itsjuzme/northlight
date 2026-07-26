@@ -28,7 +28,7 @@ export async function runContinuousVisibilityCheck(
 
   const priorMap = new Map<string, { mentioned: boolean; position: number | null }>();
   for (const s of priorSnapshots) {
-    priorMap.set(s.platformKey, { mentioned: s.brandMentioned, position: s.rankPosition });
+    priorMap.set(s.platformId, { mentioned: s.mentioned, position: s.position });
   }
 
   // 2. Persist new snapshot
@@ -44,19 +44,19 @@ export async function runContinuousVisibilityCheck(
 
   let alertsCreated = 0;
   for (const latest of latestSnapshots) {
-    const prior = priorMap.get(latest.platformKey);
+    const prior = priorMap.get(latest.platformId);
     if (!prior) continue;
 
     // Detection Rule A: Brand mention lost
-    if (prior.mentioned && !latest.brandMentioned) {
+    if (prior.mentioned && !latest.mentioned) {
       await db.insert(visibilityAlerts).values({
         brandId,
         promptId,
-        platformKey: latest.platformKey,
+        platformKey: latest.platformId,
         alertType: "mention_lost",
         previousPosition: prior.position,
         currentPosition: null,
-        message: `Brand mention lost on platform ${latest.platformKey}.`,
+        message: `Brand mention lost on platform ${latest.platformId}.`,
       });
       alertsCreated++;
     }
@@ -64,17 +64,17 @@ export async function runContinuousVisibilityCheck(
     // Detection Rule B: Position drop >= 2
     if (
       prior.position !== null &&
-      latest.rankPosition !== null &&
-      latest.rankPosition > prior.position + 1
+      latest.position !== null &&
+      latest.position > prior.position + 1
     ) {
       await db.insert(visibilityAlerts).values({
         brandId,
         promptId,
-        platformKey: latest.platformKey,
+        platformKey: latest.platformId,
         alertType: "rank_drop",
         previousPosition: prior.position,
-        currentPosition: latest.rankPosition,
-        message: `Visibility rank dropped from #${prior.position} to #${latest.rankPosition} on ${latest.platformKey}.`,
+        currentPosition: latest.position,
+        message: `Visibility rank dropped from #${prior.position} to #${latest.position} on ${latest.platformId}.`,
       });
       alertsCreated++;
     }

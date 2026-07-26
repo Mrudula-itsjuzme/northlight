@@ -37,7 +37,7 @@ export async function createCampaignMemory(
   actorUserId?: string,
 ): Promise<ActionResult<{ campaignId: string }>> {
   try {
-    await requireRoleOrThrow(input.brandId, "editor", actorUserId);
+    await requireRoleOrThrow(input.brandId, "editor");
     const db = getDb();
 
     const [memory] = await db

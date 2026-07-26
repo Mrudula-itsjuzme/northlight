@@ -98,7 +98,7 @@ export async function createPromptVersion(
 ): Promise<ActionResult<{ promptVersionId: string }>> {
   try {
     if (input.brandId) {
-      await requireRoleOrThrow(input.brandId, "admin", actorUserId);
+      await requireRoleOrThrow(input.brandId, "admin");
     }
     const db = getDb();
 
@@ -131,7 +131,7 @@ export async function rollbackPromptVersion(
   actorUserId?: string,
 ): Promise<ActionResult<void>> {
   try {
-    if (brandId) await requireRoleOrThrow(brandId, "admin", actorUserId);
+    if (brandId) await requireRoleOrThrow(brandId, "admin");
     const db = getDb();
 
     // Deactivate currently active versions for key

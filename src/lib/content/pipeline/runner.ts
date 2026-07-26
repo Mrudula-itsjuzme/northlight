@@ -30,7 +30,7 @@ import { getActiveCampaignContext, formatCampaignMemoryPrompt } from "@/lib/camp
 import { getBrandGraphContext } from "@/lib/knowledge-graph/extractor";
 import { getCachedLlmOutput, setCachedLlmOutput } from "@/lib/ai/cache";
 import { resolveModelRouting } from "@/lib/ai/cost-optimizer";
-import { computeEvaluation, evaluateAndPersistContent } from "@/lib/evaluations/engine";
+import { evaluateAndPersistContent } from "@/lib/evaluations/engine";
 
 export async function runPipeline(
   runId: string,
@@ -47,9 +47,9 @@ export async function runPipeline(
   const [brief] = await db
     .select()
     .from(contentBriefs)
-    .where(eq(contentBriefs.id, run.briefId))
+    .where(and(eq(contentBriefs.id, run.briefId), eq(contentBriefs.brandId, run.brandId)))
     .limit(1);
-  if (!brief) throw new Error(`content_briefs row ${run.briefId} not found`);
+  if (!brief) throw new Error(`content_briefs row ${run.briefId} for brand ${run.brandId} not found`);
 
   const [brand] = await db
     .select({ name: brands.name })
@@ -84,21 +84,35 @@ export async function runPipeline(
   const campaignPrompt = formatCampaignMemoryPrompt(campaignContext);
   const graphContext = await getBrandGraphContext(run.brandId);
 
-  // Combine extra context into briefContext if present
+  // Combine extra context into briefContext with strict length capping
   if (campaignPrompt || graphContext) {
-    briefContext.targetAudience = `${briefContext.targetAudience || ""}\n${campaignPrompt}\n${graphContext}`.trim();
+    const rawCombined = `${briefContext.targetAudience || ""}\n${campaignPrompt}\n${graphContext}`.trim();
+    briefContext.targetAudience = rawCombined.slice(0, 1000);
   }
 
+  // Pre-fill existing completed stage outputs if resuming
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stageOutputs: Record<string, any> = {};
+  const existingSteps = await db
+    .select()
+    .from(contentPipelineSteps)
+    .where(and(eq(contentPipelineSteps.runId, runId), eq(contentPipelineSteps.status, "completed")))
+    .orderBy(asc(contentPipelineSteps.attempt));
+
+  for (const s of existingSteps) {
+    stageOutputs[s.stage] = s.output;
+  }
+
   let totalCostCents = run.totalCostCents;
   let totalTokens = run.totalTokens;
 
   try {
-    // Stage 1-4: Sequential writing core (Research -> Strategy -> Outline -> Writer)
+    // Stage 1-4: Sequential writing core
     const sequentialStages: PipelineStage[] = ["research", "strategy", "outline", "writer"];
 
     for (const stage of sequentialStages) {
+      if (stageOutputs[stage]) continue; // Skip if already completed
+
       const stepResult = await executeStageWithCaching(
         stage,
         run.brandId,
@@ -119,30 +133,38 @@ export async function runPipeline(
         .where(eq(contentPipelineRuns.id, runId));
     }
 
-    // Stage 5-8: Parallel DAG execution for post-writing stages (Editor, SEO, Fact Check, Schema)
+    // Stage 5-8: Parallel DAG execution for post-writing stages
     await db
       .update(contentPipelineRuns)
       .set({ status: "running", currentStage: "editor", updatedAt: new Date() })
       .where(eq(contentPipelineRuns.id, runId));
 
-    // Editor & SEO Optimizer execute sequentially for draft polishing
-    const editorRes = await executeStageWithCaching("editor", run.brandId, runId, briefContext, stageOutputs, retrievedChunks);
-    if (!editorRes.ok) return { status: "failed" };
-    stageOutputs.editor = editorRes.output;
-    totalCostCents += editorRes.costCents;
-    totalTokens += editorRes.tokensUsed;
+    if (!stageOutputs.editor) {
+      const editorRes = await executeStageWithCaching("editor", run.brandId, runId, briefContext, stageOutputs, retrievedChunks);
+      if (!editorRes.ok) return { status: "failed" };
+      stageOutputs.editor = editorRes.output;
+      totalCostCents += editorRes.costCents;
+      totalTokens += editorRes.tokensUsed;
+    }
 
-    const seoRes = await executeStageWithCaching("seo_optimizer", run.brandId, runId, briefContext, stageOutputs, retrievedChunks);
-    if (!seoRes.ok) return { status: "failed" };
-    stageOutputs.seo_optimizer = seoRes.output;
-    totalCostCents += seoRes.costCents;
-    totalTokens += seoRes.tokensUsed;
+    if (!stageOutputs.seo_optimizer) {
+      const seoRes = await executeStageWithCaching("seo_optimizer", run.brandId, runId, briefContext, stageOutputs, retrievedChunks);
+      if (!seoRes.ok) return { status: "failed" };
+      stageOutputs.seo_optimizer = seoRes.output;
+      totalCostCents += seoRes.costCents;
+      totalTokens += seoRes.tokensUsed;
+    }
 
-    // Fact Check & Schema Generator execute concurrently (parallel DAG speedup)
-    const [factCheckRes, schemaRes] = await Promise.all([
-      executeStageWithCaching("fact_check", run.brandId, runId, briefContext, stageOutputs, retrievedChunks),
-      executeStageWithCaching("schema_generator", run.brandId, runId, briefContext, stageOutputs, retrievedChunks),
-    ]);
+    // Fact Check & Schema Generator execute concurrently
+    const factCheckPromise = stageOutputs.fact_check
+      ? Promise.resolve({ ok: true, output: stageOutputs.fact_check, costCents: 0, tokensUsed: 0 })
+      : executeStageWithCaching("fact_check", run.brandId, runId, briefContext, stageOutputs, retrievedChunks);
+
+    const schemaPromise = stageOutputs.schema_generator
+      ? Promise.resolve({ ok: true, output: stageOutputs.schema_generator, costCents: 0, tokensUsed: 0 })
+      : executeStageWithCaching("schema_generator", run.brandId, runId, briefContext, stageOutputs, retrievedChunks);
+
+    const [factCheckRes, schemaRes] = await Promise.all([factCheckPromise, schemaPromise]);
 
     if (!factCheckRes.ok || !schemaRes.ok) return { status: "failed" };
 
@@ -246,7 +268,6 @@ async function executeStageWithCaching(
       completedAt: new Date(),
     });
 
-    // Populate Semantic Cache
     if (result.output && typeof result.output === "object") {
       await setCachedLlmOutput(cacheLookup, result.output as Record<string, unknown>, result.tokensUsed, result.costCents);
     }
@@ -310,6 +331,17 @@ async function persistArticle(
   const factCheck = outputs.fact_check;
 
   return db.transaction(async (tx) => {
+    // Verify brief belongs to brandId
+    const [brief] = await tx
+      .select({ id: contentBriefs.id })
+      .from(contentBriefs)
+      .where(and(eq(contentBriefs.id, briefId), eq(contentBriefs.brandId, brandId)))
+      .limit(1);
+
+    if (!brief) {
+      throw new Error(`Content brief ${briefId} does not belong to brand ${brandId}`);
+    }
+
     const [article] = await tx
       .insert(articles)
       .values({

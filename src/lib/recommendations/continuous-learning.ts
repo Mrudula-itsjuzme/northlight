@@ -7,6 +7,8 @@ import type { ActionResult } from "@/lib/brands/types";
 
 export type FeedbackAction = "accepted" | "ignored" | "dismissed" | "postponed" | "manually_edited";
 
+const VALID_ACTIONS = new Set<FeedbackAction>(["accepted", "ignored", "dismissed", "postponed", "manually_edited"]);
+
 /**
  * Records user feedback action for a recommendation.
  */
@@ -18,12 +20,18 @@ export async function recordRecommendationFeedback(input: {
   actorUserId?: string;
 }): Promise<ActionResult<void>> {
   try {
-    await requireRoleOrThrow(input.brandId, "editor", input.actorUserId);
+    if (!VALID_ACTIONS.has(input.action)) {
+      return { ok: false, error: `Invalid feedback action: ${input.action}` };
+    }
+    await requireRoleOrThrow(input.brandId, "editor");
     const db = getDb();
+
+    // Prefix recommendation ID with sourceSignal to avoid cross-signal ID collisions
+    const scopedId = `${input.sourceSignal}:${input.recommendationId}`;
 
     await db.insert(recommendationFeedback).values({
       brandId: input.brandId,
-      recommendationId: input.recommendationId,
+      recommendationId: scopedId,
       sourceSignal: input.sourceSignal,
       action: input.action,
     });
@@ -53,8 +61,8 @@ const BASE_WEIGHTS: SignalWeights = {
  * Ranking logic remains 100% deterministic and unit-testable.
  */
 export async function getEvolvedSignalWeights(brandId: string): Promise<SignalWeights> {
-  const db = getDb();
   try {
+    const db = getDb();
     const feedbackStats = await db
       .select({
         sourceSignal: recommendationFeedback.sourceSignal,
@@ -78,13 +86,16 @@ export async function getEvolvedSignalWeights(brandId: string): Promise<SignalWe
       const totalDecisions = stats.accepted + stats.dismissed;
       const conversionRate = totalDecisions > 0 ? stats.accepted / totalDecisions : 0.5;
       
-      // Multiplier between 0.6x and 1.4x based on historical feedback
       const multiplier = 0.6 + conversionRate * 0.8;
       evolved[key] = BASE_WEIGHTS[key] * multiplier;
       totalEvolved += evolved[key];
     }
 
-    // Renormalize so weights sum to 1.0
+    if (totalEvolved === 0 || Number.isNaN(totalEvolved)) {
+      return BASE_WEIGHTS;
+    }
+
+    // Renormalize so weights sum strictly to 1.0
     for (const key of ["keyword", "competitor", "content", "visibility"] as const) {
       evolved[key] = evolved[key] / totalEvolved;
     }

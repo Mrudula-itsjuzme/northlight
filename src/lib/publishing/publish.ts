@@ -49,16 +49,15 @@ export async function publishArticle(
       .values({
         brandId,
         articleId,
-        destination,
-        targetUrl: options?.targetUrl ?? null,
-        syncStatus: "syncing",
+        channel: destination,
+        status: "syncing",
         idempotencyKey,
       })
       .returning();
   } else {
     await db
       .update(publications)
-      .set({ syncStatus: "syncing" })
+      .set({ status: "syncing" })
       .where(eq(publications.id, existingPub.id));
   }
 
@@ -76,12 +75,11 @@ export async function publishArticle(
   await db
     .update(publications)
     .set({
-      syncStatus: result.syncStatus,
-      externalId: result.externalId || null,
-      publishedUrl: result.publishedUrl || null,
+      status: result.syncStatus,
+      externalContentId: result.externalId || null,
+      externalUrl: result.publishedUrl || null,
       errorMessage: result.errorMessage || null,
-      lastSyncAt: new Date(),
-      publishedAt: result.syncStatus === "published" ? new Date() : null,
+      lastSyncedAt: new Date(),
     })
     .where(eq(publications.id, existingPub.id));
 
