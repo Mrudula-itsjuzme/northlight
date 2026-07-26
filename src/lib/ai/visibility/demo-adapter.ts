@@ -16,25 +16,17 @@ function seededFloat(seed: string): number {
 
 const COMPETITOR_NAMES = ["Rivalia", "Glowmane", "Silkcurl Co", "Tresora"];
 
-/**
- * Builds a deterministic, fixture-style "LLM response" for a given
- * platform+prompt+brand, then runs it through the SAME
- * `parseVisibilityResponse` function a real adapter would use — this
- * demo adapter's entire job is to produce realistic response TEXT
- * deterministically; parsing behavior is identical to (and tested
- * alongside) any real adapter's.
- */
 function buildDemoResponseText(platform: AiPlatformKey, prompt: string, brandName: string): string {
   const seed = `${platform}:${prompt}:${brandName}`;
   const mentionRoll = seededFloat(`${seed}:mention`);
-  const mentioned = mentionRoll > 0.3; // ~70% of the time, mentioned
+  const mentioned = mentionRoll > 0.3;
 
   if (!mentioned) {
     return `Here are some popular options for "${prompt}":\n1. ${COMPETITOR_NAMES[0]}\n2. ${COMPETITOR_NAMES[1]}\n3. ${COMPETITOR_NAMES[2]}`;
   }
 
   const positionRoll = seededFloat(`${seed}:position`);
-  const position = 1 + Math.floor(positionRoll * 4); // 1-4
+  const position = 1 + Math.floor(positionRoll * 4);
 
   const sentimentRoll = seededFloat(`${seed}:sentiment`);
   const sentimentPhrase: Record<Sentiment, string> =
@@ -63,17 +55,44 @@ export function createDemoVisibilityAdapter(platform: AiPlatformKey): Visibility
   return {
     platform,
     isDemo: true,
+    adapterState: "demo",
     async check(prompt: string, brandName: string): Promise<VisibilityCheckResult> {
+      const startTime = Date.now();
       const rawResponse = buildDemoResponseText(platform, prompt, brandName);
       const parsed = parseVisibilityResponse(rawResponse, brandName);
       return {
         platform,
+        adapterState: "demo",
         mentioned: parsed.mentioned,
         position: parsed.position,
         sentiment: parsed.sentiment,
         confidence: parsed.confidence,
         rawResponse,
         isDemo: true,
+        model: "demo-heuristic",
+        latencyMs: Date.now() - startTime,
+      };
+    },
+  };
+}
+
+export function createUnavailableVisibilityAdapter(platform: AiPlatformKey): VisibilityAdapter {
+  return {
+    platform,
+    isDemo: false,
+    adapterState: "unavailable",
+    async check(): Promise<VisibilityCheckResult> {
+      return {
+        platform,
+        adapterState: "unavailable",
+        mentioned: false,
+        position: null,
+        sentiment: "unknown",
+        confidence: 0,
+        rawResponse: `Provider integration for '${platform}' is unavailable (no API configured).`,
+        isDemo: false,
+        model: "none",
+        latencyMs: 0,
       };
     },
   };

@@ -315,6 +315,9 @@ export type ArticleClaimItem = {
   id: string;
   claimText: string;
   status: string;
+  verificationStatus: string;
+  sourceReference: string | null;
+  confidence: number | null;
   resolutionNote: string | null;
   overrideReason: string | null;
 };
@@ -338,6 +341,9 @@ export async function listArticleClaims(
         id: r.id,
         claimText: r.claimText,
         status: r.status,
+        verificationStatus: r.verificationStatus ?? "requires_review",
+        sourceReference: r.sourceReference,
+        confidence: r.confidence,
         resolutionNote: r.resolutionNote,
         overrideReason: r.overrideReason,
       })),

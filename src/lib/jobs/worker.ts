@@ -12,28 +12,6 @@ import { computeAndPersistRecommendations } from "@/lib/recommendations/compute-
 import { rescoreAllKeywords } from "@/lib/keywords/rescore";
 import { recordUsageEvent } from "@/lib/usage/record";
 
-/**
- * Generic worker for the Postgres-backed `jobs` table (no Redis/BullMQ —
- * see ARCHITECTURE.md for why). Polls for queued, due rows
- * (status='queued' AND run_at<=now()), claims ONE at a time via an
- * atomic UPDATE ... WHERE status='queued' RETURNING (so two worker
- * processes racing on the same row can't both claim it — only one
- * UPDATE actually matches the still-'queued' row), dispatches by `type`
- * to the matching handler, and records status/attempts/result/error on
- * the row.
- *
- * Every handler below calls the SAME role-free "core" function the
- * corresponding `"use server"` action calls (e.g. `runPipeline`,
- * `persistGapReportsForCompetitor`) — the worker is a second caller of
- * that shared core, not a reimplementation, so job-processed and
- * UI-triggered work behave identically. The worker deliberately does
- * NOT go through `requireRoleOrThrow` (there is no authenticated request
- * to check): a job row only exists because some earlier request DID
- * pass that role gate before enqueuing it, so the worker is the trusted
- * system actor executing already-authorized work — the same trust
- * boundary a queue consumer has in any request/worker split.
- */
-
 export type JobHandlerResult = { result?: Record<string, unknown> };
 
 async function handleEmbedBrandDocument(payload: unknown, brandId: string | null): Promise<JobHandlerResult> {
@@ -100,16 +78,13 @@ export type ClaimedJob = {
   payload: unknown;
   attempts: number;
   maxAttempts: number;
+  lockedBy: string | null;
 };
 
 /**
- * Atomically claims the single oldest queued+due job (if any), flipping
- * it to 'running' and incrementing attempts in the same UPDATE so a
- * concurrent worker can never claim the same row twice — the update's
- * WHERE clause only matches rows still in 'queued', and Postgres row
- * locking makes the read-then-write atomic per row.
+ * Atomically claims the single oldest queued or stale running job, setting lease metadata.
  */
-export async function claimNextJob(): Promise<ClaimedJob | null> {
+export async function claimNextJob(workerId = "worker-1"): Promise<ClaimedJob | null> {
   const db = getDb();
 
   const [claimed] = await db.execute<{
@@ -121,10 +96,16 @@ export async function claimNextJob(): Promise<ClaimedJob | null> {
     max_attempts: number;
   }>(sql`
     UPDATE jobs
-    SET status = 'running', attempts = attempts + 1, started_at = now()
+    SET status = 'running',
+        attempts = attempts + 1,
+        started_at = now(),
+        locked_at = now(),
+        locked_by = ${workerId},
+        last_attempt_at = now()
     WHERE id = (
       SELECT id FROM jobs
-      WHERE status = 'queued' AND run_at <= now()
+      WHERE (status = 'queued' AND run_at <= now())
+         OR (status = 'running' AND locked_at < now() - INTERVAL '5 minutes')
       ORDER BY run_at ASC
       LIMIT 1
       FOR UPDATE SKIP LOCKED
@@ -141,6 +122,7 @@ export async function claimNextJob(): Promise<ClaimedJob | null> {
     payload: claimed.payload,
     attempts: claimed.attempts,
     maxAttempts: claimed.max_attempts,
+    lockedBy: workerId,
   };
 }
 
@@ -150,14 +132,6 @@ export type FailureOutcome =
   | { status: "queued"; runAt: Date }
   | { status: "failed" };
 
-/**
- * Pure decision of what happens to a job row after its handler throws:
- * retry with a linear backoff (30s * attempts so far) if attempts hasn't
- * reached maxAttempts yet, otherwise a permanent failure. Extracted as a
- * pure function (no DB access) so the retry/backoff policy itself can be
- * unit tested without a database — see
- * tests/unit/jobs-worker.test.ts.
- */
 export function decideFailureOutcome(
   job: Pick<ClaimedJob, "attempts" | "maxAttempts">,
   now: Date = new Date(),
@@ -168,14 +142,6 @@ export function decideFailureOutcome(
   return { status: "failed" };
 }
 
-/**
- * Executes one claimed job to completion, recording the outcome on the
- * row. On failure: if attempts have not yet reached maxAttempts, the job
- * is put back to 'queued' with a short backoff (run_at pushed into the
- * future, via `decideFailureOutcome`) so it will be retried; once
- * maxAttempts is reached, it's marked 'failed' permanently with the
- * error message recorded.
- */
 export async function processJob(job: ClaimedJob): Promise<void> {
   const db = getDb();
 
@@ -187,7 +153,14 @@ export async function processJob(job: ClaimedJob): Promise<void> {
 
     await db
       .update(jobs)
-      .set({ status: "succeeded", completedAt: new Date(), result: result ?? {}, error: null })
+      .set({
+        status: "succeeded",
+        completedAt: new Date(),
+        result: result ?? {},
+        error: null,
+        lockedAt: null,
+        lockedBy: null,
+      })
       .where(eq(jobs.id, job.id));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -197,19 +170,13 @@ export async function processJob(job: ClaimedJob): Promise<void> {
       .update(jobs)
       .set(
         outcome.status === "queued"
-          ? { status: "queued", error: message, runAt: outcome.runAt }
-          : { status: "failed", completedAt: new Date(), error: message },
+          ? { status: "queued", error: message, runAt: outcome.runAt, lockedAt: null, lockedBy: null }
+          : { status: "failed", completedAt: new Date(), error: message, lockedAt: null, lockedBy: null },
       )
       .where(eq(jobs.id, job.id));
   }
 }
 
-/**
- * Claims and processes jobs one at a time until none are left due, or
- * `maxJobs` have been processed (whichever comes first) — used by both
- * the one-shot `scripts/worker.ts` entrypoint (run on a schedule/cron)
- * and tests. Returns the number of jobs processed.
- */
 export async function runWorkerOnce(maxJobs = 25): Promise<number> {
   let processed = 0;
   while (processed < maxJobs) {
@@ -221,11 +188,6 @@ export async function runWorkerOnce(maxJobs = 25): Promise<number> {
   return processed;
 }
 
-/**
- * Convenience query used by the Analytics/Jobs surfaces and tests:
- * counts a brand's jobs grouped by status (queued/running/succeeded/
- * failed/cancelled).
- */
 export async function countJobsByStatus(brandId: string) {
   const db = getDb();
   return db

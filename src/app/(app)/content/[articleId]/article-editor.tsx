@@ -239,6 +239,25 @@ export function ArticleEditor({
             )}
             {claims.map((claim) => (
               <div key={claim.id} className="rounded-xl border border-border/60 bg-card/40 p-3 text-xs space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border",
+                      claim.verificationStatus === "verified"
+                        ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                        : claim.verificationStatus === "unsupported" || claim.verificationStatus === "contradictory"
+                          ? "bg-rose-500/15 text-rose-400 border-rose-500/30"
+                          : "bg-amber-500/15 text-amber-400 border-amber-500/30",
+                    )}
+                  >
+                    {claim.verificationStatus?.replace("_", " ") ?? "requires review"}
+                  </span>
+                  {claim.confidence !== null && claim.confidence !== undefined && (
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                      Conf: {Math.round(claim.confidence * 100)}%
+                    </span>
+                  )}
+                </div>
                 <p
                   className={cn(
                     "rounded-lg p-2 font-medium leading-relaxed",
@@ -251,7 +270,12 @@ export function ArticleEditor({
                 >
                   {claim.claimText}
                 </p>
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                {claim.sourceReference && (
+                  <p className="text-[11px] text-cyan-400/90 font-mono flex items-center gap-1">
+                    <span className="font-semibold text-muted-foreground">Source:</span> {claim.sourceReference}
+                  </p>
+                )}
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1 border-t border-border/40">
                   <span className="capitalize font-mono">Status: {claim.status}</span>
                   {claim.status === "unresolved" && (
                     <div className="flex gap-1.5">

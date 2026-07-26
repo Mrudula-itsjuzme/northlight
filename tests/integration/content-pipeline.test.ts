@@ -13,19 +13,6 @@ import {
 } from "@/lib/content/pipeline/stages";
 import { pipelineStages, type BriefContext } from "@/lib/content/pipeline/schemas";
 
-/**
- * Proves Phase 7's acceptance criterion ("brief -> article run completes
- * via background job, steps visible with status/cost") against the real
- * schema via pglite: every stage persists its own content_pipeline_steps
- * row (status/cost/tokens), a failed+retried step does not rerun prior
- * stages, and the final article + article_versions rows are created
- * correctly. `src/lib/content/pipeline/runner.ts` itself connects via
- * Drizzle's postgres-js driver (can't attach to pglite directly — same
- * documented reason as every other Drizzle-based action in this codebase)
- * so this test drives the real stage functions (unit-tested in
- * pipeline-stages.test.ts) and persists their output with the same SQL
- * shape the runner uses, then asserts on the persisted rows.
- */
 describe("content pipeline persistence (pglite)", () => {
   let db: PGlite;
   const userA = "cccccccc-1111-1111-1111-111111111111";
@@ -81,19 +68,19 @@ describe("content pipeline persistence (pglite)", () => {
   });
 
   afterEach(async () => {
-    await db.close();
+    await db?.close();
   });
 
   /** Mirrors runner.ts: run every stage, persisting one content_pipeline_steps row per stage. */
   async function runFullPipeline() {
-    const research = runResearchStage({ brief });
-    const strategy = runStrategyStage({ brief, research: research.output });
-    const outline = runOutlineStage({ brief, strategy: strategy.output });
-    const writer = runWriterStage({ brief, outline: outline.output });
-    const editor = runEditorStage({ draft: writer.output });
-    const seo = runSeoOptimizerStage({ brief, edited: editor.output });
-    const factCheck = runFactCheckStage({ optimized: seo.output, research: research.output });
-    const schema = runSchemaGeneratorStage({ brief, optimized: seo.output });
+    const research = await runResearchStage({ brief });
+    const strategy = await runStrategyStage({ brief, research: research.output });
+    const outline = await runOutlineStage({ brief, strategy: strategy.output });
+    const writer = await runWriterStage({ brief, outline: outline.output });
+    const editor = await runEditorStage({ draft: writer.output });
+    const seo = await runSeoOptimizerStage({ brief, edited: editor.output });
+    const factCheck = await runFactCheckStage({ optimized: seo.output, research: research.output });
+    const schema = await runSchemaGeneratorStage({ brief, optimized: seo.output });
 
     const results = [
       { stage: "research", result: research },
@@ -157,8 +144,8 @@ describe("content pipeline persistence (pglite)", () => {
 
   it("retrying a failed stage does not rerun or duplicate prior completed stages", async () => {
     // Simulate: research + strategy completed, outline failed.
-    const research = runResearchStage({ brief });
-    const strategy = runStrategyStage({ brief, research: research.output });
+    const research = await runResearchStage({ brief });
+    const strategy = await runStrategyStage({ brief, research: research.output });
 
     await db.query(
       `INSERT INTO content_pipeline_steps (brand_id, run_id, stage, status, output, attempt) VALUES ($1, $2, 'research', 'completed', $3, 1);`,
@@ -173,13 +160,10 @@ describe("content pipeline persistence (pglite)", () => {
       [brandAId, runId],
     );
 
-    // Retry: delete the failed outline step (mirrors retryPipelineStage),
-    // then re-run and persist it as attempt 2 — research/strategy rows
-    // must remain untouched (still attempt 1, still completed).
     await db.query(`DELETE FROM content_pipeline_steps WHERE run_id = $1 AND stage = 'outline';`, [
       runId,
     ]);
-    const outline = runOutlineStage({ brief, strategy: strategy.output });
+    const outline = await runOutlineStage({ brief, strategy: strategy.output });
     await db.query(
       `INSERT INTO content_pipeline_steps (brand_id, run_id, stage, status, output, attempt) VALUES ($1, $2, 'outline', 'completed', $3, 2);`,
       [brandAId, runId, JSON.stringify(outline.output)],
@@ -189,7 +173,7 @@ describe("content pipeline persistence (pglite)", () => {
       `SELECT stage, status, attempt FROM content_pipeline_steps WHERE run_id = $1 ORDER BY stage;`,
       [runId],
     );
-    expect(allSteps.rows).toHaveLength(3); // research, strategy, outline (no duplicates)
+    expect(allSteps.rows).toHaveLength(3);
 
     const researchRow = allSteps.rows.find((r) => r.stage === "research")!;
     const strategyRow = allSteps.rows.find((r) => r.stage === "strategy")!;

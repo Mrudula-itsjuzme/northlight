@@ -17,6 +17,7 @@ export function DataBadge({
     live: "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)] animate-pulse",
     estimated: "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]",
     demo: "bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.6)] animate-pulse",
+    unavailable: "bg-zinc-500",
   }[kind];
 
   return (

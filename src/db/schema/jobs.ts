@@ -31,6 +31,10 @@ export const jobs = pgTable("jobs", {
   runAt: timestamp("run_at", { withTimezone: true }).notNull().defaultNow(),
   startedAt: timestamp("started_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
+  lockedAt: timestamp("locked_at", { withTimezone: true }),
+  lockedBy: text("locked_by"),
+  idempotencyKey: text("idempotency_key"),
+  lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
   result: jsonb("result").$type<Record<string, unknown>>(),
   error: text("error"),
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -42,4 +46,6 @@ export const jobs = pgTable("jobs", {
     table.status,
     table.runAt,
   ),
+  idempotencyIdx: index("jobs_idempotency_idx").on(table.idempotencyKey),
 }));
+

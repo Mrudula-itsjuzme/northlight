@@ -1,11 +1,20 @@
 import "server-only";
 import { eq, and, asc } from "drizzle-orm";
 import { getDb } from "@/db";
-import { contentPipelineRuns, contentPipelineSteps, contentBriefs, articles, articleVersions } from "@/db/schema";
+import {
+  contentPipelineRuns,
+  contentPipelineSteps,
+  contentBriefs,
+  articles,
+  articleVersions,
+  articleClaims,
+  brands,
+} from "@/db/schema";
 import {
   pipelineStages,
   type PipelineStage,
   type BriefContext,
+  type BrandBrainChunkContext,
 } from "@/lib/content/pipeline/schemas";
 import {
   runResearchStage,
@@ -17,22 +26,11 @@ import {
   runFactCheckStage,
   runSchemaGeneratorStage,
 } from "@/lib/content/pipeline/stages";
+import { searchBrandDocuments } from "@/lib/brand-brain/search";
 
-/**
- * Runs (or resumes) a content_pipeline_runs to completion, stage by
- * stage, in the fixed order Research -> Strategy -> Outline -> Writer ->
- * Editor -> SEO Optimizer -> Fact Check -> Schema Generator. Each stage's
- * input/output is persisted as its own `content_pipeline_steps` row
- * (status/cost/tokens/timestamps), so:
- *
- * - a stage can be RETRIED without rerunning prior stages (this function
- *   checks for an existing `completed` step for each stage before running
- *   it, and reuses its persisted output as the next stage's input)
- * - cost/tokens are logged per step, not just for the run as a whole
- * - a failed run can be resumed from wherever it left off by calling this
- *   function again with the same runId
- */
-export async function runPipeline(runId: string): Promise<{ status: "completed" | "failed"; articleId?: string }> {
+export async function runPipeline(
+  runId: string,
+): Promise<{ status: "completed" | "failed"; articleId?: string }> {
   const db = getDb();
 
   const [run] = await db
@@ -49,17 +47,34 @@ export async function runPipeline(runId: string): Promise<{ status: "completed" 
     .limit(1);
   if (!brief) throw new Error(`content_briefs row ${run.briefId} not found`);
 
+  const [brand] = await db
+    .select({ name: brands.name })
+    .from(brands)
+    .where(eq(brands.id, run.brandId))
+    .limit(1);
+
   const briefContext: BriefContext = {
     primaryKeyword: brief.title,
     supportingKeywords: (brief.requiredSections as string[] | null) ?? [],
     targetAudience: brief.targetAudience ?? undefined,
     searchIntent: brief.searchIntent ?? undefined,
-    brandName: "Your Brand",
+    brandName: brand?.name ?? "Your Brand",
   };
 
-  // stageOutputs accumulates each completed stage's output, either
-  // freshly computed or reloaded from a prior completed step row (the
-  // retry/resume path).
+  // Priority 2: Retrieve Brand Brain context for grounding
+  let retrievedChunks: BrandBrainChunkContext[] = [];
+  try {
+    const searchRes = await searchBrandDocuments(run.brandId, brief.title, 5);
+    retrievedChunks = searchRes.map((r) => ({
+      chunkId: r.id,
+      documentTitle: r.documentTitle,
+      content: r.content,
+      similarity: r.similarity,
+    }));
+  } catch {
+    retrievedChunks = [];
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stageOutputs: Record<string, any> = {};
   let totalCostCents = run.totalCostCents;
@@ -76,7 +91,10 @@ export async function runPipeline(runId: string): Promise<{ status: "completed" 
         .select()
         .from(contentPipelineSteps)
         .where(
-          and(eq(contentPipelineSteps.runId, runId), eq(contentPipelineSteps.stage, stage)),
+          and(
+            eq(contentPipelineSteps.runId, runId),
+            eq(contentPipelineSteps.stage, stage),
+          ),
         )
         .orderBy(asc(contentPipelineSteps.attempt));
 
@@ -88,7 +106,7 @@ export async function runPipeline(runId: string): Promise<{ status: "completed" 
       const startedAt = new Date();
       let result;
       try {
-        result = runStage(stage, briefContext, stageOutputs);
+        result = await runStage(stage, briefContext, stageOutputs, retrievedChunks);
       } catch (stageErr) {
         const message = stageErr instanceof Error ? stageErr.message : "Stage failed";
         await db.insert(contentPipelineSteps).values({
@@ -96,7 +114,7 @@ export async function runPipeline(runId: string): Promise<{ status: "completed" 
           runId,
           stage,
           status: "failed",
-          input: buildStageInput(stage, briefContext, stageOutputs),
+          input: buildStageInput(stage, briefContext, stageOutputs, retrievedChunks),
           errorMessage: message,
           attempt: (existingStep?.attempt ?? 0) + 1,
           startedAt,
@@ -114,7 +132,7 @@ export async function runPipeline(runId: string): Promise<{ status: "completed" 
         runId,
         stage,
         status: "completed",
-        input: buildStageInput(stage, briefContext, stageOutputs),
+        input: buildStageInput(stage, briefContext, stageOutputs, retrievedChunks),
         output: result.output,
         attempt: (existingStep?.attempt ?? 0) + 1,
         costCents: result.costCents,
@@ -150,13 +168,18 @@ export async function runPipeline(runId: string): Promise<{ status: "completed" 
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildStageInput(stage: PipelineStage, brief: BriefContext, outputs: Record<string, any>) {
+function buildStageInput(
+  stage: PipelineStage,
+  brief: BriefContext,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  outputs: Record<string, any>,
+  retrievedChunks: BrandBrainChunkContext[],
+) {
   switch (stage) {
     case "research":
-      return { brief };
+      return { brief, retrievedChunks };
     case "strategy":
-      return { brief, research: outputs.research };
+      return { brief, research: outputs.research, retrievedChunks };
     case "outline":
       return { brief, strategy: outputs.strategy };
     case "writer":
@@ -174,13 +197,18 @@ function buildStageInput(stage: PipelineStage, brief: BriefContext, outputs: Rec
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function runStage(stage: PipelineStage, brief: BriefContext, outputs: Record<string, any>) {
+async function runStage(
+  stage: PipelineStage,
+  brief: BriefContext,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  outputs: Record<string, any>,
+  retrievedChunks: BrandBrainChunkContext[],
+) {
   switch (stage) {
     case "research":
-      return runResearchStage({ brief });
+      return runResearchStage({ brief, retrievedChunks });
     case "strategy":
-      return runStrategyStage({ brief, research: outputs.research });
+      return runStrategyStage({ brief, research: outputs.research, retrievedChunks });
     case "outline":
       return runOutlineStage({ brief, strategy: outputs.strategy });
     case "writer":
@@ -200,7 +228,6 @@ function runStage(stage: PipelineStage, brief: BriefContext, outputs: Record<str
   }
 }
 
-/** Creates the article + its first version + any unresolved claims found by fact-check. */
 async function persistArticle(
   brandId: string,
   briefId: string,
@@ -209,6 +236,7 @@ async function persistArticle(
 ): Promise<string> {
   const db = getDb();
   const seo = outputs.seo_optimizer;
+  const factCheck = outputs.fact_check;
 
   return db.transaction(async (tx) => {
     const [article] = await tx
@@ -237,11 +265,25 @@ async function persistArticle(
       .set({ currentVersionId: version.id })
       .where(eq(articles.id, article.id));
 
+    // Priority 3: Save extracted claims to article_claims
+    if (factCheck?.claims && Array.isArray(factCheck.claims)) {
+      for (const claim of factCheck.claims) {
+        await tx.insert(articleClaims).values({
+          brandId,
+          articleId: article.id,
+          claimText: claim.claimText,
+          status: "unresolved",
+          verificationStatus: claim.verificationStatus ?? (claim.supported ? "verified" : "requires_review"),
+          sourceReference: claim.sourceReference ?? null,
+          confidence: claim.confidence ?? 0.8,
+        });
+      }
+    }
+
     return article.id;
   });
 }
 
-/** Retries a single failed stage without rerunning prior stages, then continues the run. */
 export async function retryPipelineStage(runId: string, stage: PipelineStage): Promise<void> {
   const db = getDb();
   await db

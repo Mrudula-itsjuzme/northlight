@@ -28,15 +28,15 @@ import { DEMO_KEYWORDS, DEMO_ARTICLE_TOPICS, DEMO_AI_PROMPTS, DEMO_BRAND } from 
  * the fixtures, not just an unverified aspiration in a comment.
  */
 
-function runFullPipeline(brief: BriefContext) {
-  const research = runResearchStage({ brief });
-  const strategy = runStrategyStage({ brief, research: research.output });
-  const outline = runOutlineStage({ brief, strategy: strategy.output });
-  const writer = runWriterStage({ brief, outline: outline.output });
-  const editor = runEditorStage({ draft: writer.output });
-  const seo = runSeoOptimizerStage({ brief, edited: editor.output });
-  const factCheck = runFactCheckStage({ optimized: seo.output, research: research.output });
-  const schema = runSchemaGeneratorStage({ brief, optimized: seo.output });
+async function runFullPipeline(brief: BriefContext) {
+  const research = await runResearchStage({ brief });
+  const strategy = await runStrategyStage({ brief, research: research.output });
+  const outline = await runOutlineStage({ brief, strategy: strategy.output });
+  const writer = await runWriterStage({ brief, outline: outline.output });
+  const editor = await runEditorStage({ draft: writer.output });
+  const seo = await runSeoOptimizerStage({ brief, edited: editor.output });
+  const factCheck = await runFactCheckStage({ optimized: seo.output, research: research.output });
+  const schema = await runSchemaGeneratorStage({ brief, optimized: seo.output });
   return { seo: seo.output, factCheck: factCheck.output, schema: schema.output };
 }
 
@@ -67,7 +67,7 @@ describe("seed data verified against illustrative demo score targets (SEO/EEAT r
     expect(scores.some((s) => s < 0.4)).toBe(true);
   });
 
-  it("running the seeded article topics through the real pipeline + real scoring produces real, non-fabricated SEO/EEAT/AI-readiness scores", () => {
+  it("running the seeded article topics through the real pipeline + real scoring produces real, non-fabricated SEO/EEAT/AI-readiness scores", async () => {
     const seoScores: number[] = [];
     const eeatScores: number[] = [];
 
@@ -77,7 +77,7 @@ describe("seed data verified against illustrative demo score targets (SEO/EEAT r
         supportingKeywords: [],
         brandName: DEMO_BRAND.name,
       };
-      const { seo } = runFullPipeline(brief);
+      const { seo } = await runFullPipeline(brief);
 
       const isBlockedDemo = topic.targetState === "blocked_unresolved_claim";
       // Use the REAL seo.metaDescription the pipeline computed (matching

@@ -26,12 +26,13 @@
  * the provenance label (live/estimated/demo); it does not change that
  * separate directional-only disclaimer.
  */
-export type DataProvenance = "live" | "estimated" | "demo";
+export type DataProvenance = "live" | "estimated" | "demo" | "unavailable";
 
 export const DATA_PROVENANCE_LABEL: Record<DataProvenance, string> = {
   live: "Live",
   estimated: "Estimated",
   demo: "Demo",
+  unavailable: "Unavailable",
 };
 
 export const DATA_PROVENANCE_DESCRIPTION: Record<DataProvenance, string> = {
@@ -39,17 +40,15 @@ export const DATA_PROVENANCE_DESCRIPTION: Record<DataProvenance, string> = {
   estimated:
     "Computed from real underlying data using a documented formula or heuristic, not a literal external ledger.",
   demo: "Synthetic/seeded data, or a stand-in for an integration not configured in this environment.",
+  unavailable: "API provider integration is not configured or unavailable in this environment.",
 };
 
 /**
- * Tailwind classes per provenance kind, reusing the existing
- * success/warning/demo design tokens (globals.css / tailwind.config.ts)
- * rather than inventing new colors — "demo" in particular is the same
- * purple token already used ad hoc in the Competitor Radar and AI
- * Visibility pages prior to this convention being extracted.
+ * Tailwind classes per provenance kind, reusing existing tokens.
  */
 export const DATA_PROVENANCE_BADGE_CLASS: Record<DataProvenance, string> = {
   live: "border-success/30 bg-success/10 text-success",
   estimated: "border-warning/30 bg-warning/10 text-warning",
   demo: "border-demo/30 bg-demo/10 text-demo",
+  unavailable: "border-muted-foreground/30 bg-muted/20 text-muted-foreground",
 };

@@ -7,7 +7,7 @@ describe("createDemoVisibilityAdapter", () => {
     const adapter = createDemoVisibilityAdapter("chatgpt");
     const first = await adapter.check("best detangling brush", "Curl Co");
     const second = await adapter.check("best detangling brush", "Curl Co");
-    expect(first).toEqual(second);
+    expect({ ...first, latencyMs: 0 }).toEqual({ ...second, latencyMs: 0 });
   });
 
   it("produces different results for different brands", async () => {

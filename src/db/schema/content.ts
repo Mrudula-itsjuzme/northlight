@@ -159,6 +159,9 @@ export const articleClaims = pgTable("article_claims", {
     .references(() => articles.id, { onDelete: "cascade" }),
   claimText: text("claim_text").notNull(),
   status: claimStatusEnum("status").notNull().default("unresolved"),
+  verificationStatus: text("verification_status").notNull().default("requires_review"),
+  sourceReference: text("source_reference"),
+  confidence: real("confidence"),
   resolutionNote: text("resolution_note"),
   resolvedBy: uuid("resolved_by").references(() => profiles.id, {
     onDelete: "set null",
@@ -225,6 +228,12 @@ export const publications = pgTable("publications", {
     onDelete: "set null",
   }),
   channel: text("channel").notNull().default("northlight_cms"),
+  status: text("status").notNull().default("published"),
+  externalContentId: text("external_content_id"),
+  externalUrl: text("external_url"),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+  errorMessage: text("error_message"),
+  idempotencyKey: text("idempotency_key"),
   wasOverride: boolean("was_override").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -233,3 +242,4 @@ export const publications = pgTable("publications", {
   brandIdx: index("publications_brand_idx").on(table.brandId),
   articleIdx: index("publications_article_idx").on(table.articleId),
 }));
+

@@ -50,21 +50,25 @@ export async function createTestDb(): Promise<PGlite> {
     $$;
   `);
 
-  const migration0000 = fs.readFileSync(
-    path.join(MIGRATIONS_DIR, "0000_sticky_secret_warriors.sql"),
-    "utf-8",
-  );
-  const migration0001 = fs.readFileSync(
-    path.join(MIGRATIONS_DIR, "0001_rls_policies.sql"),
-    "utf-8",
-  );
+  const migrationFiles = fs
+    .readdirSync(MIGRATIONS_DIR)
+    .filter(
+      (file) =>
+        file.endsWith(".sql") &&
+        !file.includes("auth_profiles_trigger") &&
+        !file.includes("0002_semantic_search"),
+    )
+    .sort();
 
-  const testSafeMigration0000 = migration0000
-    .replace(/CREATE EXTENSION IF NOT EXISTS vector;/, "-- (vector extension skipped under pglite; see tests/db/pglite.ts)")
-    .replace(/vector\(1536\)/g, "double precision[]");
-
-  await runStatements(db, testSafeMigration0000);
-  await runStatements(db, migration0001);
+  for (const file of migrationFiles) {
+    let sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), "utf-8");
+    if (file.includes("0000_")) {
+      sql = sql
+        .replace(/CREATE EXTENSION IF NOT EXISTS vector;/, "-- (vector extension skipped under pglite; see tests/db/pglite.ts)")
+        .replace(/vector\(1536\)/g, "double precision[]");
+    }
+    await runStatements(db, sql);
+  }
 
   // pglite's default connection role ("postgres") is a superuser with
   // rolbypassrls = true, same as any Postgres table owner — RLS NEVER

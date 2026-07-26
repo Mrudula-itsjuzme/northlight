@@ -2,10 +2,8 @@
  * Recommendation ranking engine. Consumes normalized signals from
  * keywords, competitors (gap reports), content (articles), and AI
  * visibility, and produces a ranked list of recommendations, each with
- * title/reason/evidence/impact/confidence/action/status. Deterministic
- * and pure — no LLM call — so ranking order and score computation can be
- * asserted exactly against fixture inputs (see
- * tests/unit/recommendation-rank.test.ts).
+ * title/reason/evidence/impact/confidence/action/status/scoreBreakdown.
+ * Deterministic and pure.
  */
 
 export type ImpactLevel = "low" | "medium" | "high";
@@ -14,6 +12,7 @@ export type KeywordSignal = {
   keywordId: string;
   term: string;
   priorityScore: number; // 0-1, from src/lib/scoring/priority.ts
+  createdAt?: Date;
 };
 
 export type GapSignal = {
@@ -22,6 +21,7 @@ export type GapSignal = {
   type: "content" | "schema" | "faq" | "backlink" | "ai_citation";
   priorityScore: number; // 0-1, from src/lib/competitors/gap-analysis.ts
   findingTitle: string;
+  createdAt?: Date;
 };
 
 export type ContentSignal = {
@@ -31,6 +31,7 @@ export type ContentSignal = {
   seoScore: number | null; // 0-100
   eeatScore: number | null; // 0-100
   aiReadinessScore: number | null; // 0-100
+  createdAt?: Date;
 };
 
 export type VisibilitySignal = {
@@ -39,6 +40,7 @@ export type VisibilitySignal = {
   platformDisplayName: string;
   mentioned: boolean;
   sentiment: string;
+  createdAt?: Date;
 };
 
 export type RecommendationSignals = {
@@ -48,6 +50,15 @@ export type RecommendationSignals = {
   visibility: VisibilitySignal[];
 };
 
+export type RecommendationScoreBreakdown = {
+  baseScore: number;
+  businessValue: number;
+  freshnessFactor: number;
+  confidence: number;
+  weightedScore: number;
+  signalContributions: Record<string, number>;
+};
+
 export type RankedRecommendation = {
   title: string;
   reason: string;
@@ -55,8 +66,10 @@ export type RankedRecommendation = {
   impact: ImpactLevel;
   confidence: number; // 0-1
   action: string;
+  estimatedEffort: "low" | "medium" | "high";
   sourceSignal: "keyword" | "competitor" | "content" | "visibility";
   rankScore: number; // 0-1, used to sort; higher = more important
+  scoreBreakdown: RecommendationScoreBreakdown;
 };
 
 function impactFromScore(score: number): ImpactLevel {
@@ -66,12 +79,16 @@ function impactFromScore(score: number): ImpactLevel {
 }
 
 /**
- * rankScore weighting per source signal type. Each source contributes a
- * base score in [0, 1] (already normalized per-signal-type below), then
- * this weight scales its relative importance in the final ranked list.
- * Weights sum to 1 so a top-of-pool score from any single source type is
- * comparable in magnitude across types.
+ * Calculates a decay factor [0, 1] based on signal age in days.
+ * Signal created today has factor 1.0; 30-day old signal decays towards ~0.5.
  */
+function calculateFreshnessFactor(createdAt?: Date): number {
+  if (!createdAt) return 1.0;
+  const ageInDays = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
+  if (ageInDays <= 0) return 1.0;
+  return Math.max(0.2, Math.exp(-0.02 * ageInDays));
+}
+
 const SOURCE_WEIGHTS = {
   keyword: 0.3,
   competitor: 0.3,
@@ -80,47 +97,90 @@ const SOURCE_WEIGHTS = {
 } as const;
 
 function recommendationsFromKeywords(keywords: KeywordSignal[]): RankedRecommendation[] {
-  // High-priority keywords with no content yet are the strongest signal
-  // for "write about this" — priorityScore IS the base score here.
   return keywords
     .filter((k) => k.priorityScore >= 0.5)
-    .map((k) => ({
-      title: `Create content targeting "${k.term}"`,
-      reason: `This keyword has a high priority score (${k.priorityScore.toFixed(2)}), indicating strong volume, low difficulty, or commercial intent.`,
-      evidence: { keywordId: k.keywordId, term: k.term, priorityScore: k.priorityScore },
-      impact: impactFromScore(k.priorityScore),
-      confidence: 0.7,
-      action: "Generate a content brief and run it through the content pipeline.",
-      sourceSignal: "keyword" as const,
-      rankScore: k.priorityScore * SOURCE_WEIGHTS.keyword,
-    }));
+    .map((k) => {
+      const freshnessFactor = calculateFreshnessFactor(k.createdAt);
+      const confidence = 0.7;
+      const baseScore = k.priorityScore;
+      const rankScore = baseScore * SOURCE_WEIGHTS.keyword;
+
+      return {
+        title: `Create content targeting "${k.term}"`,
+        reason: `This keyword has a high priority score (${k.priorityScore.toFixed(2)}), indicating strong volume, low difficulty, or commercial intent.`,
+        evidence: { keywordId: k.keywordId, term: k.term, priorityScore: k.priorityScore },
+        impact: impactFromScore(k.priorityScore),
+        confidence,
+        action: "Generate a content brief and run it through the content pipeline.",
+        estimatedEffort: "medium",
+        sourceSignal: "keyword" as const,
+        rankScore,
+        scoreBreakdown: {
+          baseScore,
+          businessValue: k.priorityScore,
+          freshnessFactor,
+          confidence,
+          weightedScore: rankScore,
+          signalContributions: {
+            keywordPriority: rankScore,
+            freshness: freshnessFactor,
+            businessValue: k.priorityScore,
+          },
+        },
+      };
+    });
 }
 
 function recommendationsFromGaps(gaps: GapSignal[]): RankedRecommendation[] {
-  return gaps.map((g) => ({
-    title: `Close ${g.type} gap vs. ${g.competitorName}`,
-    reason: g.findingTitle,
-    evidence: { competitorId: g.competitorId, type: g.type, priorityScore: g.priorityScore },
-    impact: impactFromScore(g.priorityScore),
-    confidence: 0.6, // demo-adapter-derived, so moderate confidence
-    action: `Address the ${g.type} gap identified in the competitor radar.`,
-    sourceSignal: "competitor" as const,
-    rankScore: g.priorityScore * SOURCE_WEIGHTS.competitor,
-  }));
+  return gaps.map((g) => {
+    const freshnessFactor = calculateFreshnessFactor(g.createdAt);
+    const confidence = 0.6;
+    const baseScore = g.priorityScore;
+    const rankScore = baseScore * SOURCE_WEIGHTS.competitor;
+    const estimatedEffort = g.type === "schema" || g.type === "faq" ? "low" : "high";
+
+    return {
+      title: `Close ${g.type} gap vs. ${g.competitorName}`,
+      reason: g.findingTitle,
+      evidence: { competitorId: g.competitorId, type: g.type, priorityScore: g.priorityScore },
+      impact: impactFromScore(g.priorityScore),
+      confidence,
+      action: `Address the ${g.type} gap identified in the competitor radar.`,
+      estimatedEffort,
+      sourceSignal: "competitor" as const,
+      rankScore,
+      scoreBreakdown: {
+        baseScore,
+        businessValue: g.priorityScore,
+        freshnessFactor,
+        confidence,
+        weightedScore: rankScore,
+        signalContributions: {
+          competitorGap: rankScore,
+          freshness: freshnessFactor,
+          businessValue: g.priorityScore,
+        },
+      },
+    };
+  });
 }
 
 function recommendationsFromContent(content: ContentSignal[]): RankedRecommendation[] {
   const recs: RankedRecommendation[] = [];
   for (const article of content) {
-    if (article.status === "published") continue; // already live, lower priority to revisit
+    if (article.status === "published") continue;
     const scores = [article.seoScore, article.eeatScore, article.aiReadinessScore].filter(
       (s): s is number => s !== null,
     );
     if (scores.length === 0) continue;
     const avgScore = scores.reduce((sum, s) => sum + s, 0) / scores.length;
-    if (avgScore >= 80) continue; // already strong, no recommendation needed
+    if (avgScore >= 80) continue;
 
-    const gapScore = (100 - avgScore) / 100; // lower quality -> higher gapScore -> higher rank
+    const gapScore = (100 - avgScore) / 100;
+    const freshnessFactor = calculateFreshnessFactor(article.createdAt);
+    const confidence = 0.8;
+    const rankScore = gapScore * SOURCE_WEIGHTS.content;
+
     recs.push({
       title: `Improve "${article.title}" before publishing`,
       reason: `Average SEO/EEAT/AI-readiness score is ${avgScore.toFixed(0)}/100, below the 80 threshold.`,
@@ -131,10 +191,23 @@ function recommendationsFromContent(content: ContentSignal[]): RankedRecommendat
         aiReadinessScore: article.aiReadinessScore,
       },
       impact: impactFromScore(gapScore),
-      confidence: 0.8, // scores are deterministically computed, high confidence in the signal itself
+      confidence,
       action: "Revise the article to address the lowest-scoring dimension.",
+      estimatedEffort: "low",
       sourceSignal: "content",
-      rankScore: gapScore * SOURCE_WEIGHTS.content,
+      rankScore,
+      scoreBreakdown: {
+        baseScore: gapScore,
+        businessValue: gapScore,
+        freshnessFactor,
+        confidence,
+        weightedScore: rankScore,
+        signalContributions: {
+          contentQualityGap: rankScore,
+          freshness: freshnessFactor,
+          businessValue: gapScore,
+        },
+      },
     });
   }
   return recs;
@@ -152,7 +225,11 @@ function recommendationsFromVisibility(visibility: VisibilitySignal[]): RankedRe
   for (const [, snapshots] of Array.from(byPrompt.entries())) {
     const notMentionedCount = snapshots.filter((s) => !s.mentioned).length;
     const gapRatio = notMentionedCount / snapshots.length;
-    if (gapRatio < 0.5) continue; // mentioned on most platforms already
+    if (gapRatio < 0.5) continue;
+
+    const freshnessFactor = calculateFreshnessFactor(snapshots[0].createdAt);
+    const confidence = 0.5;
+    const rankScore = gapRatio * SOURCE_WEIGHTS.visibility;
 
     recs.push({
       title: `Improve AI visibility for "${snapshots[0].promptText}"`,
@@ -163,21 +240,28 @@ function recommendationsFromVisibility(visibility: VisibilitySignal[]): RankedRe
         totalPlatforms: snapshots.length,
       },
       impact: impactFromScore(gapRatio),
-      confidence: 0.5, // AI visibility signals are directional only — lower confidence
+      confidence,
       action: "Publish authoritative content answering this prompt's underlying question.",
+      estimatedEffort: "high",
       sourceSignal: "visibility",
-      rankScore: gapRatio * SOURCE_WEIGHTS.visibility,
+      rankScore,
+      scoreBreakdown: {
+        baseScore: gapRatio,
+        businessValue: gapRatio,
+        freshnessFactor,
+        confidence,
+        weightedScore: rankScore,
+        signalContributions: {
+          visibilityGap: rankScore,
+          freshness: freshnessFactor,
+          businessValue: gapRatio,
+        },
+      },
     });
   }
   return recs;
 }
 
-/**
- * Ranks all recommendations across every signal source, highest
- * rankScore first. Stable sort (ties broken by original generation
- * order: keyword -> competitor -> content -> visibility) so the same
- * input always produces the same output order.
- */
 export function rankRecommendations(signals: RecommendationSignals): RankedRecommendation[] {
   const all = [
     ...recommendationsFromKeywords(signals.keywords),
@@ -190,7 +274,7 @@ export function rankRecommendations(signals: RecommendationSignals): RankedRecom
     .map((rec, index) => ({ rec, index }))
     .sort((a, b) => {
       if (b.rec.rankScore !== a.rec.rankScore) return b.rec.rankScore - a.rec.rankScore;
-      return a.index - b.index; // stable tie-break
+      return a.index - b.index;
     })
     .map(({ rec }) => rec);
 }

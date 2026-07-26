@@ -37,13 +37,25 @@ export type BriefContext = z.infer<typeof briefContextSchema>;
 // ---------------------------------------------------------------------------
 // Stage 1: Research
 // ---------------------------------------------------------------------------
-export const researchInputSchema = z.object({ brief: briefContextSchema });
+export const brandBrainChunkContextSchema = z.object({
+  chunkId: z.string(),
+  documentTitle: z.string(),
+  content: z.string(),
+  similarity: z.number(),
+});
+export type BrandBrainChunkContext = z.infer<typeof brandBrainChunkContextSchema>;
+
+export const researchInputSchema = z.object({
+  brief: briefContextSchema,
+  retrievedChunks: z.array(brandBrainChunkContextSchema).optional(),
+});
 export type ResearchInput = z.infer<typeof researchInputSchema>;
 
 export const researchOutputSchema = z.object({
   keyFacts: z.array(z.string()).min(1),
   competitorAngles: z.array(z.string()).default([]),
   brandContextSnippets: z.array(z.string()).default([]),
+  sources: z.array(z.object({ chunkId: z.string(), title: z.string() })).default([]),
 });
 export type ResearchOutput = z.infer<typeof researchOutputSchema>;
 
@@ -53,6 +65,7 @@ export type ResearchOutput = z.infer<typeof researchOutputSchema>;
 export const strategyInputSchema = z.object({
   brief: briefContextSchema,
   research: researchOutputSchema,
+  retrievedChunks: z.array(brandBrainChunkContextSchema).optional(),
 });
 export type StrategyInput = z.infer<typeof strategyInputSchema>;
 
@@ -136,9 +149,20 @@ export const factCheckInputSchema = z.object({
 });
 export type FactCheckInput = z.infer<typeof factCheckInputSchema>;
 
+export const claimStatusEnumZod = z.enum([
+  "verified",
+  "unsupported",
+  "contradictory",
+  "subjective",
+  "requires_review",
+]);
+
 export const claimSchema = z.object({
   claimText: z.string().min(1),
   supported: z.boolean(),
+  verificationStatus: claimStatusEnumZod.default("requires_review"),
+  sourceReference: z.string().optional(),
+  confidence: z.number().min(0).max(1).default(0.8),
 });
 export const factCheckOutputSchema = z.object({
   claims: z.array(claimSchema).default([]),

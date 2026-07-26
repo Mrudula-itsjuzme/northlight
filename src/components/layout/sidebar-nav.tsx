@@ -13,6 +13,7 @@ import {
   BarChart3,
   Settings,
   ChevronRight,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ const NAV_ITEMS = [
   { href: "/visibility", label: "AI Visibility", icon: Eye, badge: "Live" },
   { href: "/recommendations", label: "Recommendations", icon: Lightbulb },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/diagnostics", label: "Diagnostics", icon: Activity, badge: "System" },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

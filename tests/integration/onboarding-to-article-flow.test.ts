@@ -137,14 +137,14 @@ describe("onboarding -> article flow (pglite, data-layer integration test)", () 
       supportingKeywords: [],
       brandName: "Flow Test Brand",
     };
-    const research = runResearchStage({ brief: briefContext });
-    const strategy = runStrategyStage({ brief: briefContext, research: research.output });
-    const outline = runOutlineStage({ brief: briefContext, strategy: strategy.output });
-    const writer = runWriterStage({ brief: briefContext, outline: outline.output });
-    const editor = runEditorStage({ draft: writer.output });
-    const seo = runSeoOptimizerStage({ brief: briefContext, edited: editor.output });
-    const factCheck = runFactCheckStage({ optimized: seo.output, research: research.output });
-    const schema = runSchemaGeneratorStage({ brief: briefContext, optimized: seo.output });
+    const research = await runResearchStage({ brief: briefContext });
+    const strategy = await runStrategyStage({ brief: briefContext, research: research.output });
+    const outline = await runOutlineStage({ brief: briefContext, strategy: strategy.output });
+    const writer = await runWriterStage({ brief: briefContext, outline: outline.output });
+    const editor = await runEditorStage({ draft: writer.output });
+    const seo = await runSeoOptimizerStage({ brief: briefContext, edited: editor.output });
+    const factCheck = await runFactCheckStage({ optimized: seo.output, research: research.output });
+    const schema = await runSchemaGeneratorStage({ brief: briefContext, optimized: seo.output });
 
     for (const { stage, result } of [
       { stage: "research", result: research },

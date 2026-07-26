@@ -16,30 +16,24 @@ export const AI_PLATFORM_KEYS: AiPlatformKey[] = [
 ];
 
 export type Sentiment = "positive" | "neutral" | "negative" | "unknown";
+export type VisibilityAdapterState = "live" | "estimated" | "demo" | "unavailable";
 
 export type VisibilityCheckResult = {
   platform: AiPlatformKey;
+  adapterState: VisibilityAdapterState;
   mentioned: boolean;
   position: number | null; // 1-based rank among mentioned brands, null if not mentioned
   sentiment: Sentiment;
-  confidence: number; // 0-1, the PARSER's own extraction confidence — not a guarantee
+  confidence: number; // 0-1, the PARSER's own extraction confidence
   rawResponse: string;
   isDemo: boolean;
+  model?: string;
+  latencyMs?: number;
 };
 
-/**
- * Provider adapter interface for an AI Visibility check: given a prompt
- * and a brand name, return whether/where/how the brand was mentioned in
- * that platform's answer to the prompt. Every adapter — demo or real —
- * implements this same shape so the rest of the app (snapshot storage,
- * UI) never needs to branch on which adapter produced a result. AI
- * Visibility is DIRECTIONAL ONLY: `confidence` reflects the parser's own
- * certainty about what it extracted from the response text, never an
- * official or authoritative citation count. See AI_SCORING.md's
- * methodology section.
- */
 export interface VisibilityAdapter {
   readonly platform: AiPlatformKey;
   readonly isDemo: boolean;
+  readonly adapterState: VisibilityAdapterState;
   check(prompt: string, brandName: string): Promise<VisibilityCheckResult>;
 }

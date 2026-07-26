@@ -157,7 +157,10 @@ export function PromptList({
                         <span className="font-bold text-foreground flex items-center gap-1.5">
                           <Bot className="h-3.5 w-3.5 text-primary" /> {snap.platformDisplayName}
                         </span>
-                        {snap.isDemo && <DataBadge kind="demo" className="px-1.5 py-0.5 text-[10px]" />}
+                        <DataBadge
+                          kind={snap.confidence === 0 && !snap.isDemo ? "unavailable" : snap.isDemo ? "demo" : "live"}
+                          className="px-1.5 py-0.5 text-[10px]"
+                        />
                       </div>
 
                       <div className="flex items-center justify-between pt-1">
