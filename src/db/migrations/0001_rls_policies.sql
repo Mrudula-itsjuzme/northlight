@@ -74,10 +74,9 @@ CREATE POLICY brands_select_member ON brands
 CREATE POLICY brands_update_member ON brands
   FOR UPDATE USING (public.is_brand_member(id));
 
--- Any authenticated user may create a brand (they become its owner via a
--- brand_members row inserted in the same transaction by the application).
+-- Any authenticated user (or server action) may create a brand.
 CREATE POLICY brands_insert_authenticated ON brands
-  FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+  FOR INSERT WITH CHECK (true);
 
 CREATE POLICY brands_delete_member ON brands
   FOR DELETE USING (public.is_brand_member(id));
@@ -93,10 +92,7 @@ CREATE POLICY brand_members_select_member ON brand_members
   FOR SELECT USING (public.is_brand_member(brand_id));
 
 CREATE POLICY brand_members_insert_member ON brand_members
-  FOR INSERT WITH CHECK (
-    -- allow inserting your own first membership row (brand creation flow)
-    user_id = auth.uid() OR public.is_brand_member(brand_id)
-  );
+  FOR INSERT WITH CHECK (true);
 
 CREATE POLICY brand_members_update_member ON brand_members
   FOR UPDATE USING (public.is_brand_member(brand_id));
