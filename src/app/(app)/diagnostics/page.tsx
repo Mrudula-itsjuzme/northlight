@@ -1,7 +1,7 @@
 import { getActiveBrandId } from "@/lib/brands/actions";
 import { getDiagnosticsSummary } from "@/lib/diagnostics/telemetry";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Activity, Cpu, ShieldCheck, Zap, Database, CheckCircle2, Layers, Award, Sparkles, AlertOctagon } from "lucide-react";
+import { Activity, Cpu, ShieldCheck, Zap, Database, Award, Sparkles } from "lucide-react";
 
 export default async function DiagnosticsPage() {
   const brandId = await getActiveBrandId();

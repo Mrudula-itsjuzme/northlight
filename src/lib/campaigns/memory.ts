@@ -34,7 +34,6 @@ export type ActiveCampaignContext = {
  */
 export async function createCampaignMemory(
   input: CampaignMemoryInput,
-  actorUserId?: string,
 ): Promise<ActionResult<{ campaignId: string }>> {
   try {
     await requireRoleOrThrow(input.brandId, "editor");

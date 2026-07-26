@@ -217,7 +217,7 @@ async function executeStageWithCaching(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   stageOutputs: Record<string, any>,
   retrievedChunks: BrandBrainChunkContext[],
-): Promise<{ ok: boolean; output?: any; costCents: number; tokensUsed: number }> {
+): Promise<{ ok: boolean; output?: unknown; costCents: number; tokensUsed: number }> {
   const db = getDb();
   const routing = resolveModelRouting(stage);
   const executionMode = process.env.AI_EXECUTION_MODE || "demo";

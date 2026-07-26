@@ -94,7 +94,6 @@ export async function createPromptVersion(
     experimentName?: string;
     trafficPercentage?: number;
   },
-  actorUserId?: string,
 ): Promise<ActionResult<{ promptVersionId: string }>> {
   try {
     if (input.brandId) {
@@ -128,7 +127,6 @@ export async function rollbackPromptVersion(
   promptKey: string,
   targetVersionId: string,
   brandId?: string,
-  actorUserId?: string,
 ): Promise<ActionResult<void>> {
   try {
     if (brandId) await requireRoleOrThrow(brandId, "admin");
