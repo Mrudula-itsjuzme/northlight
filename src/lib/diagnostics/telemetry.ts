@@ -1,8 +1,16 @@
 import "server-only";
 import { sql, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { jobs, contentPipelineSteps, usageEvents } from "@/db/schema";
+import {
+  jobs,
+  contentPipelineSteps,
+  usageEvents,
+  aiEvaluations,
+  recommendationFeedback,
+  visibilityAlerts,
+} from "@/db/schema";
 import { getExecutionMode } from "@/lib/ai/llm";
+import { getCacheMetrics } from "@/lib/ai/cache";
 
 export type DiagnosticsSummary = {
   executionMode: "live" | "demo" | "test";
@@ -19,6 +27,20 @@ export type DiagnosticsSummary = {
     stepCount: number;
   };
   usageEventsCount: number;
+  cacheMetrics: {
+    totalHits: number;
+    tokensSaved: number;
+    costSavedCents: number;
+  };
+  evaluations: {
+    avgOverallScore: number;
+    totalEvaluations: number;
+  };
+  recommendations: {
+    acceptanceRatePct: number;
+    totalFeedbackCount: number;
+  };
+  visibilityAlertsCount: number;
 };
 
 export async function getDiagnosticsSummary(brandId?: string): Promise<DiagnosticsSummary> {
@@ -57,6 +79,38 @@ export async function getDiagnosticsSummary(brandId?: string): Promise<Diagnosti
     .from(usageEvents)
     .where(usageCondition);
 
+  // 4. Cache metrics
+  const cacheStats = await getCacheMetrics(brandId);
+
+  // 5. Evaluation metrics
+  const evalCondition = brandId ? eq(aiEvaluations.brandId, brandId) : undefined;
+  const [evalStats] = await db
+    .select({
+      avgOverall: sql<number>`coalesce(avg(${aiEvaluations.overallScore}), 0)::real`,
+      total: sql<number>`count(*)::int`,
+    })
+    .from(aiEvaluations)
+    .where(evalCondition);
+
+  // 6. Recommendation acceptance
+  const recCondition = brandId ? eq(recommendationFeedback.brandId, brandId) : undefined;
+  const [recStats] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      accepted: sql<number>`coalesce(sum(case when ${recommendationFeedback.action} in ('accepted', 'manually_edited') then 1 else 0 end), 0)::int`,
+    })
+    .from(recommendationFeedback)
+    .where(recCondition);
+
+  const acceptanceRatePct = recStats?.total ? (recStats.accepted / recStats.total) * 100 : 0;
+
+  // 7. Visibility alerts count
+  const alertCondition = brandId ? eq(visibilityAlerts.brandId, brandId) : undefined;
+  const [alertsStats] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(visibilityAlerts)
+    .where(alertCondition);
+
   return {
     executionMode: getExecutionMode(),
     openAiKeyConfigured: Boolean(process.env.OPENAI_API_KEY),
@@ -67,5 +121,19 @@ export async function getDiagnosticsSummary(brandId?: string): Promise<Diagnosti
       stepCount: telemetry?.stepCount ?? 0,
     },
     usageEventsCount: usage?.count ?? 0,
+    cacheMetrics: {
+      totalHits: cacheStats.totalHits,
+      tokensSaved: cacheStats.totalTokensSaved,
+      costSavedCents: cacheStats.totalCostSavedCents,
+    },
+    evaluations: {
+      avgOverallScore: evalStats?.avgOverall ?? 0,
+      totalEvaluations: evalStats?.total ?? 0,
+    },
+    recommendations: {
+      acceptanceRatePct,
+      totalFeedbackCount: recStats?.total ?? 0,
+    },
+    visibilityAlertsCount: alertsStats?.count ?? 0,
   };
 }

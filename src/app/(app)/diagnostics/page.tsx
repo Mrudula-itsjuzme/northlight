@@ -1,7 +1,7 @@
 import { getActiveBrandId } from "@/lib/brands/actions";
 import { getDiagnosticsSummary } from "@/lib/diagnostics/telemetry";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Activity, Cpu, ShieldCheck, Zap, Database, CheckCircle2, AlertTriangle, Layers } from "lucide-react";
+import { Activity, Cpu, ShieldCheck, Zap, Database, CheckCircle2, Layers, Award, Sparkles, AlertOctagon } from "lucide-react";
 
 export default async function DiagnosticsPage() {
   const brandId = await getActiveBrandId();
@@ -14,14 +14,14 @@ export default async function DiagnosticsPage() {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <h1 className="text-3xl font-bold tracking-tight text-gradient-purple">
-              Internal Diagnostics & Telemetry
+              Operational Intelligence & Diagnostics
             </h1>
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-semibold text-emerald-400 border border-emerald-500/20">
-              <Activity className="h-3.5 w-3.5" /> System Healthy
+              <Activity className="h-3.5 w-3.5" /> System Active
             </span>
           </div>
           <p className="text-sm text-muted-foreground max-w-3xl">
-            Real-time internal worker queue depth, LLM gateway token telemetry, and execution mode status.
+            Live Postgres worker queue metrics, semantic cache savings, AI quality evaluations, and visibility alerts.
           </p>
         </div>
       </div>
@@ -45,7 +45,7 @@ export default async function DiagnosticsPage() {
 
         <Card glass className="p-4 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">LLM Tokens Consumed</span>
+            <span className="text-xs font-medium text-muted-foreground">LLM Cost & Tokens</span>
             <Zap className="h-4 w-4 text-amber-400" />
           </div>
           <div className="flex items-baseline justify-between">
@@ -60,30 +60,30 @@ export default async function DiagnosticsPage() {
 
         <Card glass className="p-4 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Queued Jobs</span>
-            <Layers className="h-4 w-4 text-blue-400" />
+            <span className="text-xs font-medium text-muted-foreground">Semantic Cache Savings</span>
+            <Sparkles className="h-4 w-4 text-cyan-400" />
           </div>
           <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-bold text-foreground">
-              {summary.workerQueue.queued}
+            <span className="text-2xl font-bold text-cyan-300">
+              {summary.cacheMetrics.totalHits} hits
             </span>
-            <span className="text-xs text-muted-foreground">
-              {summary.workerQueue.running} active running
+            <span className="text-xs text-emerald-400 font-medium">
+              ${(summary.cacheMetrics.costSavedCents / 100).toFixed(4)} saved
             </span>
           </div>
         </Card>
 
         <Card glass className="p-4 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Completed Jobs</span>
-            <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+            <span className="text-xs font-medium text-muted-foreground">Avg AI Eval Score</span>
+            <Award className="h-4 w-4 text-indigo-400" />
           </div>
           <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-bold text-foreground">
-              {summary.workerQueue.succeeded}
+            <span className="text-2xl font-bold text-indigo-300">
+              {(summary.evaluations.avgOverallScore * 100).toFixed(1)}%
             </span>
-            <span className="text-xs text-rose-400 font-medium">
-              {summary.workerQueue.failed} failed
+            <span className="text-xs text-muted-foreground">
+              {summary.evaluations.totalEvaluations} evaluations
             </span>
           </div>
         </Card>
@@ -94,10 +94,10 @@ export default async function DiagnosticsPage() {
         <Card glass>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Database className="h-5 w-5 text-indigo-400" /> Background Job Queue Health
+              <Database className="h-5 w-5 text-indigo-400" /> Background Job Queue Status
             </CardTitle>
             <CardDescription>
-              Postgres-native queue status (`SKIP LOCKED` lease recovery enabled).
+              Postgres-native job queue with atomic lease recovery (`FOR UPDATE SKIP LOCKED`).
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -107,7 +107,7 @@ export default async function DiagnosticsPage() {
                 <span className="font-mono font-bold text-foreground">{summary.workerQueue.queued}</span>
               </div>
               <div className="flex justify-between text-sm py-2 border-b border-border/40">
-                <span className="text-muted-foreground">Running (Leased by Worker)</span>
+                <span className="text-muted-foreground">Running (Active Worker Lease)</span>
                 <span className="font-mono font-bold text-amber-400">{summary.workerQueue.running}</span>
               </div>
               <div className="flex justify-between text-sm py-2 border-b border-border/40">
@@ -125,35 +125,33 @@ export default async function DiagnosticsPage() {
         <Card glass>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-emerald-400" /> Gateway & Infrastructure Telemetry
+              <ShieldCheck className="h-5 w-5 text-emerald-400" /> Intelligence & Continuous Learning
             </CardTitle>
             <CardDescription>
-              Structured logging & execution environment audit details.
+              Real-time recommendation feedback & AI visibility alerts.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-xs">
             <div className="rounded-lg bg-background/60 p-4 border border-border/50 space-y-2 font-mono">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Environment:</span>
-                <span className="text-foreground">{process.env.NODE_ENV ?? "development"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">AI Gateway Mode:</span>
-                <span className="text-violet-400 font-bold">{summary.executionMode}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">OpenAI Key Status:</span>
-                <span className={summary.openAiKeyConfigured ? "text-emerald-400" : "text-rose-400"}>
-                  {summary.openAiKeyConfigured ? "Configured & Active" : "Missing (Fallback Active)"}
+                <span className="text-muted-foreground">Rec Acceptance Rate:</span>
+                <span className="text-emerald-400 font-bold">
+                  {summary.recommendations.acceptanceRatePct.toFixed(1)}% ({summary.recommendations.totalFeedbackCount} actions)
                 </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Visibility Regression Alerts:</span>
+                <span className={summary.visibilityAlertsCount > 0 ? "text-amber-400 font-bold" : "text-emerald-400"}>
+                  {summary.visibilityAlertsCount} active alerts
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Tokens Saved via Cache:</span>
+                <span className="text-cyan-300 font-bold">{summary.cacheMetrics.tokensSaved.toLocaleString()}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Pipeline Steps Executed:</span>
                 <span className="text-foreground">{summary.llmTelemetry.stepCount}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Usage Meter Events:</span>
-                <span className="text-foreground">{summary.usageEventsCount}</span>
               </div>
             </div>
           </CardContent>

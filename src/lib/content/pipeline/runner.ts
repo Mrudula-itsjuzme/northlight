@@ -11,7 +11,6 @@ import {
   brands,
 } from "@/db/schema";
 import {
-  pipelineStages,
   type PipelineStage,
   type BriefContext,
   type BrandBrainChunkContext,
@@ -27,6 +26,11 @@ import {
   runSchemaGeneratorStage,
 } from "@/lib/content/pipeline/stages";
 import { searchBrandDocuments } from "@/lib/brand-brain/search";
+import { getActiveCampaignContext, formatCampaignMemoryPrompt } from "@/lib/campaigns/memory";
+import { getBrandGraphContext } from "@/lib/knowledge-graph/extractor";
+import { getCachedLlmOutput, setCachedLlmOutput } from "@/lib/ai/cache";
+import { resolveModelRouting } from "@/lib/ai/cost-optimizer";
+import { computeEvaluation, evaluateAndPersistContent } from "@/lib/evaluations/engine";
 
 export async function runPipeline(
   runId: string,
@@ -61,7 +65,7 @@ export async function runPipeline(
     brandName: brand?.name ?? "Your Brand",
   };
 
-  // Priority 2: Retrieve Brand Brain context for grounding
+  // 1. Retrieve Brand Brain vector chunks
   let retrievedChunks: BrandBrainChunkContext[] = [];
   try {
     const searchRes = await searchBrandDocuments(run.brandId, brief.title, 5);
@@ -75,83 +79,98 @@ export async function runPipeline(
     retrievedChunks = [];
   }
 
+  // 2. Retrieve Campaign Memory Context & Knowledge Graph Context
+  const campaignContext = await getActiveCampaignContext(run.brandId);
+  const campaignPrompt = formatCampaignMemoryPrompt(campaignContext);
+  const graphContext = await getBrandGraphContext(run.brandId);
+
+  // Combine extra context into briefContext if present
+  if (campaignPrompt || graphContext) {
+    briefContext.targetAudience = `${briefContext.targetAudience || ""}\n${campaignPrompt}\n${graphContext}`.trim();
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stageOutputs: Record<string, any> = {};
   let totalCostCents = run.totalCostCents;
   let totalTokens = run.totalTokens;
 
   try {
-    for (const stage of pipelineStages) {
-      await db
-        .update(contentPipelineRuns)
-        .set({ status: "running", currentStage: stage, updatedAt: new Date() })
-        .where(eq(contentPipelineRuns.id, runId));
+    // Stage 1-4: Sequential writing core (Research -> Strategy -> Outline -> Writer)
+    const sequentialStages: PipelineStage[] = ["research", "strategy", "outline", "writer"];
 
-      const [existingStep] = await db
-        .select()
-        .from(contentPipelineSteps)
-        .where(
-          and(
-            eq(contentPipelineSteps.runId, runId),
-            eq(contentPipelineSteps.stage, stage),
-          ),
-        )
-        .orderBy(asc(contentPipelineSteps.attempt));
-
-      if (existingStep && existingStep.status === "completed") {
-        stageOutputs[stage] = existingStep.output;
-        continue;
-      }
-
-      const startedAt = new Date();
-      let result;
-      try {
-        result = await runStage(stage, briefContext, stageOutputs, retrievedChunks);
-      } catch (stageErr) {
-        const message = stageErr instanceof Error ? stageErr.message : "Stage failed";
-        await db.insert(contentPipelineSteps).values({
-          brandId: run.brandId,
-          runId,
-          stage,
-          status: "failed",
-          input: buildStageInput(stage, briefContext, stageOutputs, retrievedChunks),
-          errorMessage: message,
-          attempt: (existingStep?.attempt ?? 0) + 1,
-          startedAt,
-          completedAt: new Date(),
-        });
-        await db
-          .update(contentPipelineRuns)
-          .set({ status: "failed", updatedAt: new Date() })
-          .where(eq(contentPipelineRuns.id, runId));
-        return { status: "failed" };
-      }
-
-      await db.insert(contentPipelineSteps).values({
-        brandId: run.brandId,
-        runId,
+    for (const stage of sequentialStages) {
+      const stepResult = await executeStageWithCaching(
         stage,
-        status: "completed",
-        input: buildStageInput(stage, briefContext, stageOutputs, retrievedChunks),
-        output: result.output,
-        attempt: (existingStep?.attempt ?? 0) + 1,
-        costCents: result.costCents,
-        tokensUsed: result.tokensUsed,
-        startedAt,
-        completedAt: new Date(),
-      });
+        run.brandId,
+        runId,
+        briefContext,
+        stageOutputs,
+        retrievedChunks,
+      );
+      if (!stepResult.ok) return { status: "failed" };
 
-      stageOutputs[stage] = result.output;
-      totalCostCents += result.costCents;
-      totalTokens += result.tokensUsed;
+      stageOutputs[stage] = stepResult.output;
+      totalCostCents += stepResult.costCents;
+      totalTokens += stepResult.tokensUsed;
 
       await db
         .update(contentPipelineRuns)
-        .set({ totalCostCents, totalTokens, updatedAt: new Date() })
+        .set({ totalCostCents, totalTokens, currentStage: stage, updatedAt: new Date() })
         .where(eq(contentPipelineRuns.id, runId));
     }
 
+    // Stage 5-8: Parallel DAG execution for post-writing stages (Editor, SEO, Fact Check, Schema)
+    await db
+      .update(contentPipelineRuns)
+      .set({ status: "running", currentStage: "editor", updatedAt: new Date() })
+      .where(eq(contentPipelineRuns.id, runId));
+
+    // Editor & SEO Optimizer execute sequentially for draft polishing
+    const editorRes = await executeStageWithCaching("editor", run.brandId, runId, briefContext, stageOutputs, retrievedChunks);
+    if (!editorRes.ok) return { status: "failed" };
+    stageOutputs.editor = editorRes.output;
+    totalCostCents += editorRes.costCents;
+    totalTokens += editorRes.tokensUsed;
+
+    const seoRes = await executeStageWithCaching("seo_optimizer", run.brandId, runId, briefContext, stageOutputs, retrievedChunks);
+    if (!seoRes.ok) return { status: "failed" };
+    stageOutputs.seo_optimizer = seoRes.output;
+    totalCostCents += seoRes.costCents;
+    totalTokens += seoRes.tokensUsed;
+
+    // Fact Check & Schema Generator execute concurrently (parallel DAG speedup)
+    const [factCheckRes, schemaRes] = await Promise.all([
+      executeStageWithCaching("fact_check", run.brandId, runId, briefContext, stageOutputs, retrievedChunks),
+      executeStageWithCaching("schema_generator", run.brandId, runId, briefContext, stageOutputs, retrievedChunks),
+    ]);
+
+    if (!factCheckRes.ok || !schemaRes.ok) return { status: "failed" };
+
+    stageOutputs.fact_check = factCheckRes.output;
+    stageOutputs.schema_generator = schemaRes.output;
+    totalCostCents += factCheckRes.costCents + schemaRes.costCents;
+    totalTokens += factCheckRes.tokensUsed + schemaRes.tokensUsed;
+
+    await db
+      .update(contentPipelineRuns)
+      .set({ totalCostCents, totalTokens, updatedAt: new Date() })
+      .where(eq(contentPipelineRuns.id, runId));
+
+    // Persist Article and run AI Evaluation Engine
     const articleId = await persistArticle(run.brandId, run.briefId, stageOutputs);
+
+    const seo = stageOutputs.seo_optimizer;
+    if (seo?.bodyHtml) {
+      await evaluateAndPersistContent({
+        brandId: run.brandId,
+        articleId,
+        runId,
+        bodyHtml: seo.bodyHtml,
+        primaryKeyword: brief.title,
+        brandContextSnippets: retrievedChunks.map((c) => c.content),
+        claims: stageOutputs.fact_check?.claims,
+      });
+    }
 
     await db
       .update(contentPipelineRuns)
@@ -168,32 +187,84 @@ export async function runPipeline(
   }
 }
 
-function buildStageInput(
+async function executeStageWithCaching(
   stage: PipelineStage,
-  brief: BriefContext,
+  brandId: string,
+  runId: string,
+  briefContext: BriefContext,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  outputs: Record<string, any>,
+  stageOutputs: Record<string, any>,
   retrievedChunks: BrandBrainChunkContext[],
-) {
-  switch (stage) {
-    case "research":
-      return { brief, retrievedChunks };
-    case "strategy":
-      return { brief, research: outputs.research, retrievedChunks };
-    case "outline":
-      return { brief, strategy: outputs.strategy };
-    case "writer":
-      return { brief, outline: outputs.outline };
-    case "editor":
-      return { draft: outputs.writer };
-    case "seo_optimizer":
-      return { brief, edited: outputs.editor };
-    case "fact_check":
-      return { optimized: outputs.seo_optimizer, research: outputs.research };
-    case "schema_generator":
-      return { brief, optimized: outputs.seo_optimizer };
-    default:
-      return {};
+): Promise<{ ok: boolean; output?: any; costCents: number; tokensUsed: number }> {
+  const db = getDb();
+  const routing = resolveModelRouting(stage);
+  const executionMode = process.env.AI_EXECUTION_MODE || "demo";
+
+  // Check Semantic Cache first
+  const cacheLookup = {
+    brandId,
+    stage,
+    promptVersion: "v1.0.0",
+    executionMode,
+    model: routing.model,
+    provider: routing.provider,
+    requestPayload: { stage, briefTitle: briefContext.primaryKeyword },
+  };
+
+  const cached = await getCachedLlmOutput(cacheLookup);
+  if (cached.hit && cached.data) {
+    await db.insert(contentPipelineSteps).values({
+      brandId,
+      runId,
+      stage,
+      status: "completed",
+      input: { cached: true, routingReason: routing.routingReason },
+      output: cached.data,
+      costCents: 0,
+      tokensUsed: 0,
+      startedAt: new Date(),
+      completedAt: new Date(),
+    });
+    return { ok: true, output: cached.data, costCents: 0, tokensUsed: 0 };
+  }
+
+  // Execute Stage
+  const startedAt = new Date();
+  try {
+    const result = await runStage(stage, briefContext, stageOutputs, retrievedChunks);
+
+    await db.insert(contentPipelineSteps).values({
+      brandId,
+      runId,
+      stage,
+      status: "completed",
+      input: { routingReason: routing.routingReason },
+      output: result.output,
+      costCents: result.costCents,
+      tokensUsed: result.tokensUsed,
+      startedAt,
+      completedAt: new Date(),
+    });
+
+    // Populate Semantic Cache
+    if (result.output && typeof result.output === "object") {
+      await setCachedLlmOutput(cacheLookup, result.output as Record<string, unknown>, result.tokensUsed, result.costCents);
+    }
+
+    return { ok: true, output: result.output, costCents: result.costCents, tokensUsed: result.tokensUsed };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Stage execution failed";
+    await db.insert(contentPipelineSteps).values({
+      brandId,
+      runId,
+      stage,
+      status: "failed",
+      input: { routingReason: routing.routingReason },
+      errorMessage: message,
+      startedAt,
+      completedAt: new Date(),
+    });
+    return { ok: false, costCents: 0, tokensUsed: 0 };
   }
 }
 
@@ -265,7 +336,6 @@ async function persistArticle(
       .set({ currentVersionId: version.id })
       .where(eq(articles.id, article.id));
 
-    // Priority 3: Save extracted claims to article_claims
     if (factCheck?.claims && Array.isArray(factCheck.claims)) {
       for (const claim of factCheck.claims) {
         await tx.insert(articleClaims).values({
