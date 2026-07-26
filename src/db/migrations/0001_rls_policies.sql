@@ -55,13 +55,13 @@ $$;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY profiles_select_own ON profiles
-  FOR SELECT USING (true);
+  FOR SELECT USING (id = auth.uid());
 
 CREATE POLICY profiles_update_own ON profiles
-  FOR UPDATE USING (true);
+  FOR UPDATE USING (id = auth.uid());
 
 CREATE POLICY profiles_insert_own ON profiles
-  FOR INSERT WITH CHECK (true);
+  FOR INSERT WITH CHECK (id = auth.uid());
 
 -- ---------------------------------------------------------------------------
 -- brands: readable/writable only by members of that brand.
@@ -74,9 +74,10 @@ CREATE POLICY brands_select_member ON brands
 CREATE POLICY brands_update_member ON brands
   FOR UPDATE USING (public.is_brand_member(id));
 
--- Any authenticated user (or server action) may create a brand.
+-- Any authenticated user may create a brand (they become its owner via a
+-- brand_members row inserted in the same transaction by the application).
 CREATE POLICY brands_insert_authenticated ON brands
-  FOR INSERT WITH CHECK (true);
+  FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
 CREATE POLICY brands_delete_member ON brands
   FOR DELETE USING (public.is_brand_member(id));
@@ -92,7 +93,10 @@ CREATE POLICY brand_members_select_member ON brand_members
   FOR SELECT USING (public.is_brand_member(brand_id));
 
 CREATE POLICY brand_members_insert_member ON brand_members
-  FOR INSERT WITH CHECK (true);
+  FOR INSERT WITH CHECK (
+    -- allow inserting your own first membership row (brand creation flow)
+    user_id = auth.uid() OR public.is_brand_member(brand_id)
+  );
 
 CREATE POLICY brand_members_update_member ON brand_members
   FOR UPDATE USING (public.is_brand_member(brand_id));

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { ensureProfile } from "@/lib/profiles/upsert";
 import {
   signupSchema,
   loginSchema,
@@ -66,7 +67,12 @@ export async function signup(input: SignupInput): Promise<AuthActionResult> {
       return { ok: false, error: error.message };
     }
 
-    if (data.session) {
+    if (data.session && data.user) {
+      try {
+        await ensureProfile(data.user);
+      } catch (profileErr) {
+        console.error("[signup profile error]:", profileErr);
+      }
       revalidatePath("/", "layout");
       shouldRedirect = true;
     } else {
@@ -103,13 +109,21 @@ export async function login(input: LoginInput): Promise<AuthActionResult> {
     }
 
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data: { user }, error } = await supabase.auth.signInWithPassword({
       email: parsed.data.email,
       password: parsed.data.password,
     });
 
     if (error) {
       return { ok: false, error: error.message };
+    }
+
+    if (user) {
+      try {
+        await ensureProfile(user);
+      } catch (profileErr) {
+        console.error("[login profile error]:", profileErr);
+      }
     }
 
     revalidatePath("/", "layout");

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { ensureProfile } from "@/lib/profiles/upsert";
 
 /**
  * Supabase redirects here after email confirmation / magic-link / password
@@ -14,12 +15,17 @@ export async function GET(request: NextRequest) {
 
   if (code) {
     const supabase = createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    if (!error && data.user) {
+      try {
+        await ensureProfile(data.user);
+      } catch (profileErr) {
+        console.error("[auth callback profile upsert error]:", profileErr);
+      }
       return NextResponse.redirect(`${origin}${next}`);
     }
     return NextResponse.redirect(
-      `${origin}/login?error=${encodeURIComponent(error.message)}`,
+      `${origin}/login?error=${encodeURIComponent(error?.message ?? "Authentication failed.")}`,
     );
   }
 

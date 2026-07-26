@@ -8,6 +8,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { brands, brandMembers, invites, profiles } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
+import { ensureProfile } from "@/lib/profiles/upsert";
 import {
   createBrandSchema,
   inviteMemberSchema,
@@ -63,27 +64,54 @@ export async function createBrand(
     };
   }
 
-  const userId = await getAuthedUserId();
-  if (!userId) {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
     return { ok: false, error: "You must be signed in to create a brand." };
   }
 
+  const userId = user.id;
   const db = getDb();
   const { name, vertical, websiteUrl } = parsed.data;
 
   try {
     const brandId = await db.transaction(async (tx) => {
-      const [brand] = await tx
-        .insert(brands)
-        .values({
-          name,
-          slug: slugify(name),
-          vertical: vertical || null,
-          websiteUrl: websiteUrl || null,
-          createdBy: userId,
-        })
-        .returning({ id: brands.id });
+      // 1. Ensure public.profiles row exists for the authenticated user
+      await ensureProfile(user, tx);
 
+      // 2. Insert brand with slug collision retry mechanism
+      let brand;
+      let attempts = 0;
+      while (attempts < 3) {
+        try {
+          const generatedSlug = slugify(name);
+          const [insertedBrand] = await tx
+            .insert(brands)
+            .values({
+              name,
+              slug: generatedSlug,
+              vertical: vertical || null,
+              websiteUrl: websiteUrl || null,
+              createdBy: userId,
+            })
+            .returning({ id: brands.id });
+
+          brand = insertedBrand;
+          break;
+        } catch (slugErr) {
+          attempts++;
+          if (attempts >= 3) throw slugErr;
+        }
+      }
+
+      if (!brand) {
+        throw new Error("Failed to create brand record.");
+      }
+
+      // 3. Insert owner membership
       await tx.insert(brandMembers).values({
         brandId: brand.id,
         userId,
@@ -96,9 +124,10 @@ export async function createBrand(
     revalidatePath("/", "layout");
     return { ok: true, data: { brandId } };
   } catch (err) {
+    console.error("[createBrand Error]:", err);
     return {
       ok: false,
-      error: err instanceof Error ? err.message : "Failed to create brand.",
+      error: "Failed to create brand workspace. Please try again.",
     };
   }
 }
