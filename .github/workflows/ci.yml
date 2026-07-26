@@ -7,7 +7,7 @@ on:
 
 jobs:
   verify:
-    name: Lint, typecheck, test, build
+    name: Lint, typecheck, tests, architecture, benchmarks, build
     runs-on: ubuntu-latest
 
     steps:
@@ -29,8 +29,14 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test
+      - name: Unit & Integration Tests
         run: npm test
 
-      - name: Build
+      - name: Architecture Boundary Tests
+        run: npx vitest run tests/architecture/architecture.test.ts
+
+      - name: Performance Benchmark Tests
+        run: npx vitest run tests/benchmark/benchmark.test.ts
+
+      - name: Production Build
         run: npm run build

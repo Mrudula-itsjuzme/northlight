@@ -94,34 +94,34 @@ export function computeEvaluation(input: EvaluateContentInput): EvaluationMetric
 
   if (wordCount === 0) {
     return {
-      overallScore: 0.5,
-      factualGroundingScore: 0.5,
-      brandBrainGroundingScore: 0.5,
-      brandVoiceScore: 0.5,
-      readabilityScore: 0.5,
-      seoQualityScore: 0.5,
-      entityCoverageScore: 0.5,
-      duplicateDetectionScore: 0.5,
-      hallucinationLikelihoodScore: 0.5,
-      structureQualityScore: 0.5,
-      citationCoverageScore: 0.5,
+      overallScore: 0.01,
+      factualGroundingScore: 0.01,
+      brandBrainGroundingScore: 0.01,
+      brandVoiceScore: 0.01,
+      readabilityScore: 0.01,
+      seoQualityScore: 0.01,
+      entityCoverageScore: 0.01,
+      duplicateDetectionScore: 0.01,
+      hallucinationLikelihoodScore: 0.01,
+      structureQualityScore: 0.01,
+      citationCoverageScore: 0.01,
       explanation: "Body content is empty or contains only HTML tags.",
       categoryScores: {
-        factual_grounding: 0.5,
-        brand_brain_grounding: 0.5,
-        brand_voice: 0.5,
-        readability: 0.5,
-        seo_quality: 0.5,
-        entity_coverage: 0.5,
-        duplicate_detection: 0.5,
-        hallucination_likelihood: 0.5,
-        structure_quality: 0.5,
-        citation_coverage: 0.5,
+        factual_grounding: 0.01,
+        brand_brain_grounding: 0.01,
+        brand_voice: 0.01,
+        readability: 0.01,
+        seo_quality: 0.01,
+        entity_coverage: 0.01,
+        duplicate_detection: 0.01,
+        hallucination_likelihood: 0.01,
+        structure_quality: 0.01,
+        citation_coverage: 0.01,
       },
       evaluatorVersion: "v2.0.0",
-      methodologyDescription: "Fallback score calculation due to empty text body.",
-      confidenceScore: 0.2,
-      knownLimitations: ["Content length is zero; heuristic defaults applied."],
+      methodologyDescription: "Zero-score evaluation triggered due to empty content payload.",
+      confidenceScore: 1.0,
+      knownLimitations: ["Content length is zero; zero quality metric enforced."],
     };
   }
 
@@ -132,25 +132,24 @@ export function computeEvaluation(input: EvaluateContentInput): EvaluationMetric
   const asl = wordCount / sentenceCount; // Average Sentence Length
   const asw = totalSyllables / wordCount; // Average Syllables per Word
   const fleschEase = 206.835 - 1.015 * asl - 84.6 * asw;
-  // Map Flesch Reading Ease (0-100) to [0, 1] normalized quality score (target range: 50-75 optimal)
-  const readabilityScore = Math.min(1, Math.max(0.2, 1 - Math.abs(fleschEase - 62.5) / 62.5));
+  const readabilityScore = Math.min(1, Math.max(0.1, 1 - Math.abs(fleschEase - 62.5) / 62.5));
 
   // 2. Structure Quality Score
   const h1Count = (input.bodyHtml.match(/<h1[^>]*>/gi) || []).length;
   const h2Count = (input.bodyHtml.match(/<h2[^>]*>/gi) || []).length;
   const pCount = (input.bodyHtml.match(/<p[^>]*>/gi) || []).length;
-  let structureQualityScore = 0.5;
+  let structureQualityScore = 0.4;
   if (h1Count === 1 && h2Count >= 2 && pCount >= 3) structureQualityScore = 0.95;
   else if (h2Count >= 1 && pCount >= 2) structureQualityScore = 0.8;
 
   // 3. SEO Quality Score (Keyword density check)
-  let seoQualityScore = 0.6;
+  let seoQualityScore = 0.5;
   if (input.primaryKeyword && input.primaryKeyword.trim().length > 0) {
     try {
       const safeKw = escapeRegExp(input.primaryKeyword.trim());
       const kwMatches = text.toLowerCase().match(new RegExp(safeKw.toLowerCase(), "g")) || [];
       const density = wordCount > 0 ? kwMatches.length / wordCount : 0;
-      seoQualityScore = density >= 0.005 && density <= 0.03 ? 0.95 : density > 0 ? 0.75 : 0.4;
+      seoQualityScore = density >= 0.005 && density <= 0.03 ? 0.95 : density > 0 ? 0.75 : 0.3;
     } catch {
       seoQualityScore = 0.5;
     }
@@ -160,9 +159,10 @@ export function computeEvaluation(input: EvaluateContentInput): EvaluationMetric
   const claims = input.claims || [];
   const supportedClaims = claims.filter((c) => c.supported).length;
   const factualGroundingScore = claims.length > 0 ? supportedClaims / claims.length : 0.85;
+  // Hallucination likelihood is strictly labeled as a heuristic indicator
   const hallucinationLikelihoodScore = factualGroundingScore >= 0.8 ? 0.9 : factualGroundingScore >= 0.5 ? 0.6 : 0.3;
 
-  // 5. Brand Brain Grounding (Semantic n-gram overlap)
+  // 5. Brand Brain Grounding (Semantic 3-gram overlap)
   const snippets = input.brandContextSnippets || [];
   let brandBrainGroundingScore = 0.7;
   if (snippets.length > 0) {
@@ -174,28 +174,28 @@ export function computeEvaluation(input: EvaluateContentInput): EvaluationMetric
 
   // 6. Citation Coverage
   const sources = input.sources || [];
-  const citationCoverageScore = sources.length > 0 ? Math.min(1, sources.length * 0.25) : 0.6;
+  const citationCoverageScore = sources.length > 0 ? Math.min(1, sources.length * 0.25) : 0.5;
 
-  // 7. Duplicate Detection Score
-  const uniqueWords = new Set(words.map((w) => w.toLowerCase()));
-  const lexicalDiversity = wordCount > 0 ? uniqueWords.size / wordCount : 1;
-  const duplicateDetectionScore = Math.min(1, Math.max(0.4, lexicalDiversity * 1.4));
+  // 7. Phrase & Section Duplicate Detection (3-gram uniqueness check)
+  const ngrams = Array.from(generateNgrams(text, 3));
+  const uniqueNgrams = new Set(ngrams);
+  const nGramUniquenessRatio = ngrams.length > 0 ? uniqueNgrams.size / ngrams.length : 1;
+  const duplicateDetectionScore = Math.min(1, Math.max(0.1, nGramUniquenessRatio));
 
   // 8. Brand Voice Score
   const brandVoiceScore = Math.min(1, (structureQualityScore + brandBrainGroundingScore) / 2);
 
-  // 9. Entity Coverage Score (Using extracted entities if provided, else uppercase entity detection)
+  // 9. Entity Coverage Score (Extracted expected entities vs output entities)
   let entityCoverageScore = 0.7;
   if (input.extractedEntities && input.extractedEntities.length > 0) {
     const textLower = text.toLowerCase();
     const matchedEntities = input.extractedEntities.filter((e) => textLower.includes(e.toLowerCase())).length;
-    entityCoverageScore = Math.min(1, Math.max(0.4, matchedEntities / input.extractedEntities.length));
+    entityCoverageScore = Math.min(1, Math.max(0.1, matchedEntities / input.extractedEntities.length));
   } else {
     const capitalWords = words.filter((w) => /^[A-Z][a-z]+$/.test(w));
-    entityCoverageScore = Math.min(1, Math.max(0.5, capitalWords.length / Math.max(1, wordCount * 0.1)));
+    entityCoverageScore = Math.min(1, Math.max(0.4, capitalWords.length / Math.max(1, wordCount * 0.1)));
   }
 
-  // Category Scores map with strict [0, 1] bounds
   const categoryScores: Record<string, number> = {
     factual_grounding: Math.min(1, Math.max(0, factualGroundingScore)),
     brand_brain_grounding: Math.min(1, Math.max(0, brandBrainGroundingScore)),
@@ -212,7 +212,7 @@ export function computeEvaluation(input: EvaluateContentInput): EvaluationMetric
   const scoreValues = Object.values(categoryScores);
   const overallScore = scoreValues.reduce((sum, s) => sum + s, 0) / scoreValues.length;
 
-  const explanation = `Overall evaluation score: ${(overallScore * 100).toFixed(1)}/100. Flesch Reading Ease: ${fleschEase.toFixed(1)} (readability: ${(categoryScores.readability * 100).toFixed(0)}%). Grounding: ${(categoryScores.brand_brain_grounding * 100).toFixed(0)}%. SEO: ${(categoryScores.seo_quality * 100).toFixed(0)}%.`;
+  const explanation = `Overall quality score: ${(overallScore * 100).toFixed(1)}/100. Flesch Reading Ease: ${fleschEase.toFixed(1)}. Grounding: ${(categoryScores.brand_brain_grounding * 100).toFixed(0)}%. SEO: ${(categoryScores.seo_quality * 100).toFixed(0)}%.`;
 
   return {
     overallScore,
@@ -229,11 +229,11 @@ export function computeEvaluation(input: EvaluateContentInput): EvaluationMetric
     explanation,
     categoryScores,
     evaluatorVersion: "v2.0.0",
-    methodologyDescription: "Multi-dimensional scoring engine combining Flesch Reading Ease formulas, 3-gram Jaccard grounding overlap, citation verification, and entity density.",
+    methodologyDescription: "Multi-dimensional deterministic scoring combining Flesch Reading Ease, 3-gram phrase Jaccard grounding overlap, citation verification, and entity coverage ratios.",
     confidenceScore: claims.length > 0 && snippets.length > 0 ? 0.92 : 0.75,
     knownLimitations: [
-      "Flesch Reading Ease measures text complexity but does not account for technical jargon accuracy.",
-      "Grounding uses n-gram overlap; full semantic embedding similarity requires live LLM gateway.",
+      "Flesch Reading Ease measures syntactic text length and syllable density, not domain factual correctness.",
+      "Hallucination likelihood is a heuristic indicator based on claim verification status.",
     ],
   };
 }
@@ -248,7 +248,6 @@ export async function evaluateAndPersistContent(
     await requireRoleOrThrow(input.brandId, "viewer");
     const db = getDb();
 
-    // Verify article ownership if articleId is provided
     if (input.articleId) {
       const [article] = await db
         .select({ id: articles.id })

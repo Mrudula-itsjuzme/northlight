@@ -15,6 +15,7 @@ export type LogEvent = {
   subsystem: string;
   message: string;
   brandId?: string;
+  stage?: string;
   context?: Record<string, unknown>;
   errorName?: string;
   stack?: string;

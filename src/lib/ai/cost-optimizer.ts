@@ -4,6 +4,7 @@ import type { PipelineStage } from "@/lib/content/pipeline/schemas";
 export type ModelRoutingOptions = {
   estimatedTokens?: number;
   complexity?: "low" | "medium" | "high" | "critical";
+  taskComplexity?: "low" | "medium" | "high" | "critical" | "standard";
   tenantBudgetExceeded?: boolean;
   historicalLatencyMs?: number;
 };

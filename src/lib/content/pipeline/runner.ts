@@ -25,13 +25,22 @@ import {
   runFactCheckStage,
   runSchemaGeneratorStage,
 } from "@/lib/content/pipeline/stages";
-import { buildExecutionGraph } from "@/lib/content/pipeline/dag";
+import { buildExecutionGraph, PIPELINE_DAG_NODES } from "@/lib/content/pipeline/dag";
 import { searchBrandDocuments } from "@/lib/brand-brain/search";
 import { getActiveCampaignContext, formatCampaignMemoryPrompt } from "@/lib/campaigns/memory";
 import { getBrandGraphContext } from "@/lib/knowledge-graph/extractor";
-import { getCachedLlmOutput, setCachedLlmOutput } from "@/lib/ai/cache";
+import {
+  getCachedLlmOutput,
+  setCachedLlmOutput,
+  getBrandBrainRevision,
+  getCampaignMemoryRevision,
+  getKnowledgeGraphRevision,
+  getActivePromptRevision,
+  getPipelineConfigRevision,
+} from "@/lib/ai/cache";
 import { resolveModelRouting } from "@/lib/ai/cost-optimizer";
 import { evaluateAndPersistContent } from "@/lib/evaluations/engine";
+import { logOperationalEvent, classifyError } from "@/lib/diagnostics/logging";
 
 export async function runPipeline(
   runId: string,
@@ -76,7 +85,15 @@ export async function runPipeline(
       content: r.content,
       similarity: r.similarity,
     }));
-  } catch {
+  } catch (err) {
+    logOperationalEvent({
+      category: classifyError(err),
+      severity: "warn",
+      subsystem: "pipeline_brand_brain",
+      brandId: run.brandId,
+      message: "Brand Brain vector search degraded or empty; proceeding without vector chunks",
+      errorName: err instanceof Error ? err.name : undefined,
+    });
     retrievedChunks = [];
   }
 
@@ -85,11 +102,15 @@ export async function runPipeline(
   const campaignPrompt = formatCampaignMemoryPrompt(campaignContext);
   const graphContext = await getBrandGraphContext(run.brandId);
 
-  // Combine extra context into briefContext with strict length capping
   if (campaignPrompt || graphContext) {
     const rawCombined = `${briefContext.targetAudience || ""}\n${campaignPrompt}\n${graphContext}`.trim();
     briefContext.targetAudience = rawCombined.slice(0, 1000);
   }
+
+  // 3. Retrieve DB-backed revisions
+  const brandBrainRevision = await getBrandBrainRevision(run.brandId);
+  const campaignMemoryRevision = await getCampaignMemoryRevision(run.brandId);
+  const knowledgeGraphRevision = await getKnowledgeGraphRevision(run.brandId);
 
   // Pre-fill existing completed stage outputs if resuming
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -108,24 +129,30 @@ export async function runPipeline(
   let totalTokens = run.totalTokens;
 
   try {
-    // Build topological execution graph levels
     const executionLevels = buildExecutionGraph();
 
     for (const level of executionLevels) {
-      // Filter out stages already completed
       const pendingStages = level.filter((stage) => !stageOutputs[stage]);
       if (pendingStages.length === 0) continue;
 
-      // Update current run status
       await db
         .update(contentPipelineRuns)
         .set({ status: "running", currentStage: pendingStages[0], updatedAt: new Date() })
         .where(eq(contentPipelineRuns.id, runId));
 
-      // Execute all ready stages in the current topological level concurrently
       const results = await Promise.all(
         pendingStages.map((stage) =>
-          executeStageWithCaching(stage, run.brandId, runId, briefContext, stageOutputs, retrievedChunks),
+          executeStageWithCaching({
+            stage,
+            brandId: run.brandId,
+            runId,
+            briefContext,
+            stageOutputs,
+            retrievedChunks,
+            brandBrainRevision,
+            campaignMemoryRevision,
+            knowledgeGraphRevision,
+          }),
         ),
       );
 
@@ -133,7 +160,23 @@ export async function runPipeline(
         const stage = pendingStages[i];
         const res = results[i];
 
-        if (!res.ok) return { status: "failed" };
+        if (!res.ok) {
+          logOperationalEvent({
+            category: "retryable",
+            severity: "error",
+            subsystem: "pipeline_runner",
+            brandId: run.brandId,
+            stage,
+            message: `Pipeline stage "${stage}" failed after retries; aborting pipeline run ${runId}`,
+          });
+
+          await db
+            .update(contentPipelineRuns)
+            .set({ status: "failed", updatedAt: new Date() })
+            .where(eq(contentPipelineRuns.id, runId));
+
+          return { status: "failed" };
+        }
 
         stageOutputs[stage] = res.output;
         totalCostCents += res.costCents;
@@ -146,7 +189,6 @@ export async function runPipeline(
         .where(eq(contentPipelineRuns.id, runId));
     }
 
-    // Persist Article and run AI Evaluation Engine
     const articleId = await persistArticle(run.brandId, run.briefId, stageOutputs);
 
     const seo = stageOutputs.seo_optimizer;
@@ -169,6 +211,14 @@ export async function runPipeline(
 
     return { status: "completed", articleId };
   } catch (err) {
+    logOperationalEvent({
+      category: classifyError(err),
+      severity: "error",
+      subsystem: "pipeline_runner",
+      brandId: run.brandId,
+      message: `Fatal error in pipeline run ${runId}: ${err instanceof Error ? err.message : String(err)}`,
+    });
+
     await db
       .update(contentPipelineRuns)
       .set({ status: "failed", updatedAt: new Date() })
@@ -177,30 +227,66 @@ export async function runPipeline(
   }
 }
 
-async function executeStageWithCaching(
-  stage: PipelineStage,
-  brandId: string,
-  runId: string,
-  briefContext: BriefContext,
+type ExecuteStageParams = {
+  stage: PipelineStage;
+  brandId: string;
+  runId: string;
+  briefContext: BriefContext;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  stageOutputs: Record<string, any>,
-  retrievedChunks: BrandBrainChunkContext[],
+  stageOutputs: Record<string, any>;
+  retrievedChunks: BrandBrainChunkContext[];
+  brandBrainRevision: string;
+  campaignMemoryRevision: string;
+  knowledgeGraphRevision: string;
+};
+
+async function executeStageWithCaching(
+  params: ExecuteStageParams,
 ): Promise<{ ok: boolean; output?: unknown; costCents: number; tokensUsed: number }> {
+  const {
+    stage,
+    brandId,
+    runId,
+    briefContext,
+    stageOutputs,
+    retrievedChunks,
+    brandBrainRevision,
+    campaignMemoryRevision,
+    knowledgeGraphRevision,
+  } = params;
+
   const db = getDb();
-  const routing = resolveModelRouting(stage);
+  const stageConfig = PIPELINE_DAG_NODES[stage];
+  const promptVersion = await getActivePromptRevision(stage, brandId);
+  const configRevision = getPipelineConfigRevision(stage);
   const executionMode = process.env.AI_EXECUTION_MODE || "demo";
 
-  // Check Semantic Cache first
+  // Dynamic cost routing decision with multi-factor estimation
+  const estimatedTokens = 1500;
+  const taskComplexity = stage === "writer" || stage === "fact_check" ? "critical" : "standard";
+  const routing = resolveModelRouting(stage, {
+    estimatedTokens,
+    taskComplexity,
+  });
+
   const cacheLookup = {
     brandId,
     stage,
-    promptVersion: "v1.0.0",
+    promptVersion,
+    brandBrainRevision,
+    campaignMemoryRevision,
+    knowledgeGraphRevision,
     executionMode,
     model: routing.model,
     provider: routing.provider,
     requestPayload: { stage, briefTitle: briefContext.primaryKeyword },
+    retrievedChunkIds: retrievedChunks.map((c) => c.chunkId),
+    retrievedChunkVersions: retrievedChunks.map((c) => `${c.chunkId}:v1`),
+    upstreamOutputs: stageOutputs,
+    configVersions: { [stage]: configRevision },
   };
 
+  // Check Semantic Cache first
   const cached = await getCachedLlmOutput(cacheLookup);
   if (cached.hit && cached.data) {
     await db.insert(contentPipelineSteps).values({
@@ -208,53 +294,76 @@ async function executeStageWithCaching(
       runId,
       stage,
       status: "completed",
-      input: { cached: true, routingReason: routing.routingReason },
+      input: { cached: true, routingReason: routing.routingReason, promptVersion },
       output: cached.data,
       costCents: 0,
       tokensUsed: 0,
+      attempt: 1,
       startedAt: new Date(),
       completedAt: new Date(),
     });
     return { ok: true, output: cached.data, costCents: 0, tokensUsed: 0 };
   }
 
-  // Execute Stage
-  const startedAt = new Date();
-  try {
-    const result = await runStage(stage, briefContext, stageOutputs, retrievedChunks);
+  // Execute Stage with Exponential Backoff Retries
+  const maxAttempts = stageConfig.maxRetries || 1;
+  let lastError: Error | null = null;
 
-    await db.insert(contentPipelineSteps).values({
-      brandId,
-      runId,
-      stage,
-      status: "completed",
-      input: { routingReason: routing.routingReason },
-      output: result.output,
-      costCents: result.costCents,
-      tokensUsed: result.tokensUsed,
-      startedAt,
-      completedAt: new Date(),
-    });
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const startedAt = new Date();
+    try {
+      if (attempt > 1) {
+        const backoff = stageConfig.backoffMs * Math.pow(2, attempt - 2);
+        await new Promise((res) => setTimeout(res, Math.min(backoff, 2000)));
+      }
 
-    if (result.output && typeof result.output === "object") {
-      await setCachedLlmOutput(cacheLookup, result.output as Record<string, unknown>, result.tokensUsed, result.costCents);
+      const result = await runStage(stage, briefContext, stageOutputs, retrievedChunks);
+
+      await db.insert(contentPipelineSteps).values({
+        brandId,
+        runId,
+        stage,
+        status: "completed",
+        attempt,
+        input: { routingReason: routing.routingReason, promptVersion },
+        output: result.output,
+        costCents: result.costCents,
+        tokensUsed: result.tokensUsed,
+        startedAt,
+        completedAt: new Date(),
+      });
+
+      if (result.output && typeof result.output === "object") {
+        await setCachedLlmOutput(cacheLookup, result.output as Record<string, unknown>, result.tokensUsed, result.costCents);
+      }
+
+      return { ok: true, output: result.output, costCents: result.costCents, tokensUsed: result.tokensUsed };
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      logOperationalEvent({
+        category: "retryable",
+        severity: attempt === maxAttempts ? "error" : "warn",
+        subsystem: "pipeline_stage",
+        brandId,
+        stage,
+        message: `Stage "${stage}" attempt ${attempt}/${maxAttempts} failed: ${lastError.message}`,
+      });
+
+      await db.insert(contentPipelineSteps).values({
+        brandId,
+        runId,
+        stage,
+        status: "failed",
+        attempt,
+        input: { routingReason: routing.routingReason, promptVersion },
+        errorMessage: lastError.message,
+        startedAt,
+        completedAt: new Date(),
+      });
     }
-
-    return { ok: true, output: result.output, costCents: result.costCents, tokensUsed: result.tokensUsed };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Stage execution failed";
-    await db.insert(contentPipelineSteps).values({
-      brandId,
-      runId,
-      stage,
-      status: "failed",
-      input: { routingReason: routing.routingReason },
-      errorMessage: message,
-      startedAt,
-      completedAt: new Date(),
-    });
-    return { ok: false, costCents: 0, tokensUsed: 0 };
   }
+
+  return { ok: false, costCents: 0, tokensUsed: 0 };
 }
 
 async function runStage(
@@ -299,7 +408,6 @@ async function persistArticle(
   const factCheck = outputs.fact_check;
 
   return db.transaction(async (tx) => {
-    // Verify brief belongs to brandId
     const [brief] = await tx
       .select({ id: contentBriefs.id })
       .from(contentBriefs)

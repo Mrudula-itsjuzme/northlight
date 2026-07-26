@@ -2,7 +2,13 @@ import "server-only";
 import { createHash } from "crypto";
 import { eq, and, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { aiSemanticCache } from "@/db/schema";
+import {
+  aiSemanticCache,
+  campaignMemories,
+  knowledgeGraphNodes,
+  promptVersions,
+} from "@/db/schema";
+import { brandDocuments } from "@/db/schema/brand-setup";
 
 export type CacheLookupInput = {
   brandId: string;
@@ -21,6 +27,85 @@ export type CacheLookupInput = {
   configVersions?: Record<string, string>;
   ttlSeconds?: number;
 };
+
+/**
+ * Computes real database-backed Brand Brain document revision hash.
+ */
+export async function getBrandBrainRevision(brandId: string): Promise<string> {
+  try {
+    const db = getDb();
+    const [row] = await db
+      .select({ maxUpdated: sql<string>`coalesce(max(${brandDocuments.updatedAt})::text, 'none')` })
+      .from(brandDocuments)
+      .where(eq(brandDocuments.brandId, brandId));
+    return createHash("sha256").update(row?.maxUpdated || "none").digest("hex").slice(0, 16);
+  } catch {
+    return "bb_v1";
+  }
+}
+
+/**
+ * Computes real database-backed active Campaign Memory revision hash.
+ */
+export async function getCampaignMemoryRevision(brandId: string): Promise<string> {
+  try {
+    const db = getDb();
+    const [row] = await db
+      .select({ maxUpdated: sql<string>`coalesce(max(${campaignMemories.updatedAt})::text, 'none')` })
+      .from(campaignMemories)
+      .where(and(eq(campaignMemories.brandId, brandId), eq(campaignMemories.isActive, true)));
+    return createHash("sha256").update(row?.maxUpdated || "none").digest("hex").slice(0, 16);
+  } catch {
+    return "cm_v1";
+  }
+}
+
+/**
+ * Computes real database-backed Knowledge Graph revision hash.
+ */
+export async function getKnowledgeGraphRevision(brandId: string): Promise<string> {
+  try {
+    const db = getDb();
+    const [row] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(knowledgeGraphNodes)
+      .where(eq(knowledgeGraphNodes.brandId, brandId));
+    return createHash("sha256").update(`kg:${row?.count || 0}`).digest("hex").slice(0, 16);
+  } catch {
+    return "kg_v1";
+  }
+}
+
+/**
+ * Computes real database-backed Active Prompt version revision string.
+ */
+export async function getActivePromptRevision(promptKey: string, brandId?: string): Promise<string> {
+  try {
+    const db = getDb();
+    const query = brandId
+      ? db
+          .select({ id: promptVersions.id, version: promptVersions.version })
+          .from(promptVersions)
+          .where(and(eq(promptVersions.promptKey, promptKey), eq(promptVersions.brandId, brandId), eq(promptVersions.isActive, true)))
+      : db
+          .select({ id: promptVersions.id, version: promptVersions.version })
+          .from(promptVersions)
+          .where(and(eq(promptVersions.promptKey, promptKey), eq(promptVersions.isActive, true)));
+
+    const [row] = await query.limit(1);
+    return row ? `${row.id}:${row.version}` : "prompt_v1";
+  } catch {
+    return "prompt_v1";
+  }
+}
+
+/**
+ * Returns deterministic pipeline configuration revision string per stage.
+ */
+export function getPipelineConfigRevision(stage: string): string {
+  const norm = normalizeCacheStage(stage);
+  return createHash("sha256").update(`cfg:${norm}:v2.0.0`).digest("hex").slice(0, 16);
+}
 
 /**
  * Recursively canonicalizes JSON values by sorting object keys alphabetically.
