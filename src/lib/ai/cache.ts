@@ -9,10 +9,17 @@ export type CacheLookupInput = {
   stage: string;
   promptVersion: string;
   brandBrainRevision?: string;
+  campaignMemoryRevision?: string;
+  knowledgeGraphRevision?: string;
   executionMode: string;
   model: string;
   provider: string;
   requestPayload: unknown;
+  retrievedChunkIds?: string[];
+  retrievedChunkVersions?: string[];
+  upstreamOutputs?: Record<string, unknown>;
+  configVersions?: Record<string, string>;
+  ttlSeconds?: number;
 };
 
 /**
@@ -36,17 +43,34 @@ export function canonicalizeJsonPayload(val: unknown): unknown {
 }
 
 /**
- * Computes deterministic SHA256 hash key for semantic cache matching.
+ * Normalizes stage key name (lowercase, trimmed, hyphens replaced with underscores).
+ */
+export function normalizeCacheStage(stage: string): string {
+  return String(stage || "")
+    .toLowerCase()
+    .trim()
+    .replace(/-/g, "_");
+}
+
+/**
+ * Computes deterministic SHA256 hash key for semantic cache matching incorporating all revisions & retrieved chunks.
  */
 export function computeCacheHash(input: CacheLookupInput): string {
+  const normalizedStage = normalizeCacheStage(input.stage);
   const canonicalPayload = JSON.stringify({
     brandId: input.brandId,
-    stage: input.stage,
+    stage: normalizedStage,
     promptVersion: input.promptVersion,
     brandBrainRevision: input.brandBrainRevision || "v1",
+    campaignMemoryRevision: input.campaignMemoryRevision || "v1",
+    knowledgeGraphRevision: input.knowledgeGraphRevision || "v1",
     executionMode: input.executionMode,
     model: input.model,
     provider: input.provider,
+    retrievedChunkIds: [...(input.retrievedChunkIds || [])].sort(),
+    retrievedChunkVersions: [...(input.retrievedChunkVersions || [])].sort(),
+    upstreamOutputs: canonicalizeJsonPayload(input.upstreamOutputs || {}),
+    configVersions: canonicalizeJsonPayload(input.configVersions || {}),
     payload: canonicalizeJsonPayload(input.requestPayload),
   });
   return createHash("sha256").update(canonicalPayload).digest("hex");
@@ -54,7 +78,7 @@ export function computeCacheHash(input: CacheLookupInput): string {
 
 /**
  * Retrieves cached LLM stage output if hit exists and is valid.
- * Strictly scopes by both requestHash AND brandId for tenant isolation.
+ * Strictly scopes by requestHash & brandId, and respects expiresAt expiration timestamp.
  */
 export async function getCachedLlmOutput<T extends Record<string, unknown>>(
   input: CacheLookupInput,
@@ -70,6 +94,11 @@ export async function getCachedLlmOutput<T extends Record<string, unknown>>(
       .limit(1);
 
     if (!entry) return { hit: false };
+
+    // Check expiration timestamp if set
+    if (entry.expiresAt && new Date(entry.expiresAt).getTime() <= Date.now()) {
+      return { hit: false };
+    }
 
     // Increment hit count asynchronously without blocking or failing read on error
     db.update(aiSemanticCache)
@@ -92,7 +121,7 @@ export async function getCachedLlmOutput<T extends Record<string, unknown>>(
 }
 
 /**
- * Stores LLM stage output in semantic cache.
+ * Stores LLM stage output in semantic cache with optional expiration TTL.
  */
 export async function setCachedLlmOutput(
   input: CacheLookupInput,
@@ -101,6 +130,8 @@ export async function setCachedLlmOutput(
   costSavedCents = 0,
 ): Promise<void> {
   const hash = computeCacheHash(input);
+  const normalizedStage = normalizeCacheStage(input.stage);
+  const expiresAt = input.ttlSeconds ? new Date(Date.now() + input.ttlSeconds * 1000) : null;
 
   try {
     const db = getDb();
@@ -109,7 +140,7 @@ export async function setCachedLlmOutput(
       .values({
         requestHash: hash,
         brandId: input.brandId,
-        stage: input.stage,
+        stage: normalizedStage,
         promptVersion: input.promptVersion,
         brandBrainRevision: input.brandBrainRevision || "v1",
         executionMode: input.executionMode,
@@ -119,11 +150,13 @@ export async function setCachedLlmOutput(
         tokensSaved,
         costSavedCents,
         hitCount: 1,
+        expiresAt,
       })
       .onConflictDoUpdate({
         target: aiSemanticCache.requestHash,
         set: {
           cachedResponse: response,
+          expiresAt,
           updatedAt: new Date(),
         },
       });
@@ -133,12 +166,19 @@ export async function setCachedLlmOutput(
 }
 
 /**
- * Invalidates cache for a brand when brand brain documents or prompts change.
+ * Selective invalidation for a brand's cache, with optional stage filtering.
  */
-export async function invalidateBrandCache(brandId: string): Promise<void> {
+export async function invalidateBrandCache(brandId: string, stage?: string): Promise<void> {
   try {
     const db = getDb();
-    await db.delete(aiSemanticCache).where(eq(aiSemanticCache.brandId, brandId));
+    if (stage) {
+      const normalizedStage = normalizeCacheStage(stage);
+      await db
+        .delete(aiSemanticCache)
+        .where(and(eq(aiSemanticCache.brandId, brandId), eq(aiSemanticCache.stage, normalizedStage)));
+    } else {
+      await db.delete(aiSemanticCache).where(eq(aiSemanticCache.brandId, brandId));
+    }
   } catch {
     // Silent fail
   }

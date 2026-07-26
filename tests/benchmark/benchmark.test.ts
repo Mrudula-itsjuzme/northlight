@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { computeEvaluation } from "@/lib/evaluations/engine";
+import { computeEvaluation, countSyllables, generateNgrams, computeNgramJaccard } from "@/lib/evaluations/engine";
 import { rankRecommendations } from "@/lib/recommendations/rank";
 import { extractGraphElements } from "@/lib/knowledge-graph/extractor";
 import { computeCacheHash } from "@/lib/ai/cache";
+import { buildExecutionGraph } from "@/lib/content/pipeline/dag";
+import { computeBucketValue } from "@/lib/prompts/experimentation";
 
 describe("Performance Benchmark Suite", () => {
   it("measures recommendation ranking latency (must execute under 50ms for 100 signals)", () => {
@@ -64,5 +66,39 @@ describe("Performance Benchmark Suite", () => {
 
     expect(hash).toHaveLength(64);
     expect(durationMs).toBeLessThan(20);
+  });
+
+  it("measures DAG execution level resolution speed (under 5ms)", () => {
+    const start = performance.now();
+    const graph = buildExecutionGraph();
+    const durationMs = performance.now() - start;
+
+    expect(graph.length).toBeGreaterThan(0);
+    expect(durationMs).toBeLessThan(5);
+  });
+
+  it("measures prompt traffic bucketing calculation speed for 100 users (under 10ms)", () => {
+    const start = performance.now();
+    for (let i = 0; i < 100; i++) {
+      computeBucketValue(`brand-1:user-${i}:prompt-key-1`);
+    }
+    const durationMs = performance.now() - start;
+
+    expect(durationMs).toBeLessThan(10);
+  });
+
+  it("measures Flesch-Kincaid syllable & n-gram throughput (under 15ms)", () => {
+    const text = "Artificial intelligence optimization requires high performance vector storage and deterministic pipeline execution.";
+    const start = performance.now();
+    const words = text.split(/\s+/);
+    let totalSyllables = 0;
+    for (const w of words) totalSyllables += countSyllables(w);
+    const ngrams = generateNgrams(text, 3);
+    const jaccard = computeNgramJaccard(ngrams, ngrams);
+    const durationMs = performance.now() - start;
+
+    expect(totalSyllables).toBeGreaterThan(10);
+    expect(jaccard).toBe(1.0);
+    expect(durationMs).toBeLessThan(15);
   });
 });

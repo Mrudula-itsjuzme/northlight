@@ -1,3 +1,5 @@
+import "server-only";
+
 /**
  * Recommendation ranking engine. Consumes normalized signals from
  * keywords, competitors (gap reports), content (articles), and AI

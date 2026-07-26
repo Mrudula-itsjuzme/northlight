@@ -17,7 +17,6 @@ export async function recordRecommendationFeedback(input: {
   recommendationId: string;
   sourceSignal: "keyword" | "competitor" | "content" | "visibility";
   action: FeedbackAction;
-  actorUserId?: string;
 }): Promise<ActionResult<void>> {
   try {
     if (!VALID_ACTIONS.has(input.action)) {
@@ -49,6 +48,13 @@ export type SignalWeights = {
   visibility: number;
 };
 
+export type EvolvedWeightsResult = {
+  weights: SignalWeights;
+  explanations: Record<string, string>;
+  isColdStart: boolean;
+  sampleCount: number;
+};
+
 const BASE_WEIGHTS: SignalWeights = {
   keyword: 0.3,
   competitor: 0.3,
@@ -56,11 +62,15 @@ const BASE_WEIGHTS: SignalWeights = {
   visibility: 0.2,
 };
 
+const MIN_SAMPLE_THRESHOLD = 5;
+const BAYESIAN_M = 4; // Pseudo-count weight for Bayesian m-estimate smoothing
+const MIN_WEIGHT_BOUND = 0.05;
+const MAX_WEIGHT_BOUND = 0.40;
+
 /**
- * Computes evolved signal weights dynamically from historical feedback conversion rates.
- * Ranking logic remains 100% deterministic and unit-testable.
+ * Computes evolved signal weights using Bayesian m-estimate smoothing, sample thresholds, and weight bounds.
  */
-export async function getEvolvedSignalWeights(brandId: string): Promise<SignalWeights> {
+export async function getEvolvedSignalWeightsWithAudit(brandId: string): Promise<EvolvedWeightsResult> {
   try {
     const db = getDb();
     const feedbackStats = await db
@@ -68,42 +78,86 @@ export async function getEvolvedSignalWeights(brandId: string): Promise<SignalWe
         sourceSignal: recommendationFeedback.sourceSignal,
         acceptedCount: sql<number>`coalesce(sum(case when ${recommendationFeedback.action} in ('accepted', 'manually_edited') then 1 else 0 end), 0)::int`,
         dismissedCount: sql<number>`coalesce(sum(case when ${recommendationFeedback.action} in ('dismissed', 'ignored') then 1 else 0 end), 0)::int`,
+        totalCount: sql<number>`count(*)::int`,
       })
       .from(recommendationFeedback)
       .where(eq(recommendationFeedback.brandId, brandId))
       .groupBy(recommendationFeedback.sourceSignal);
 
-    const statsMap = new Map<string, { accepted: number; dismissed: number }>();
+    const statsMap = new Map<string, { accepted: number; dismissed: number; total: number }>();
+    let grandTotalDecisions = 0;
+
     for (const row of feedbackStats) {
-      statsMap.set(row.sourceSignal, { accepted: row.acceptedCount, dismissed: row.dismissedCount });
+      statsMap.set(row.sourceSignal, {
+        accepted: row.acceptedCount,
+        dismissed: row.dismissedCount,
+        total: row.totalCount,
+      });
+      grandTotalDecisions += row.totalCount;
     }
 
-    const evolved: SignalWeights = { ...BASE_WEIGHTS };
-    let totalEvolved = 0;
+    const explanations: Record<string, string> = {};
+
+    // Cold-Start Check: Require minimum sample size threshold before evolving weights
+    if (grandTotalDecisions < MIN_SAMPLE_THRESHOLD) {
+      for (const key of ["keyword", "competitor", "content", "visibility"] as const) {
+        explanations[key] = `Cold-start baseline weight ${(BASE_WEIGHTS[key] * 100).toFixed(1)}% applied (samples ${grandTotalDecisions} < threshold ${MIN_SAMPLE_THRESHOLD}).`;
+      }
+      return {
+        weights: { ...BASE_WEIGHTS },
+        explanations,
+        isColdStart: true,
+        sampleCount: grandTotalDecisions,
+      };
+    }
+
+    const unnormalized: SignalWeights = { ...BASE_WEIGHTS };
+    let sumUnnormalized = 0;
 
     for (const key of ["keyword", "competitor", "content", "visibility"] as const) {
-      const stats = statsMap.get(key) || { accepted: 0, dismissed: 0 };
-      const totalDecisions = stats.accepted + stats.dismissed;
-      const conversionRate = totalDecisions > 0 ? stats.accepted / totalDecisions : 0.5;
-      
-      const multiplier = 0.6 + conversionRate * 0.8;
-      evolved[key] = BASE_WEIGHTS[key] * multiplier;
-      totalEvolved += evolved[key];
+      const stats = statsMap.get(key) || { accepted: 0, dismissed: 0, total: 0 };
+      const prior = BASE_WEIGHTS[key];
+
+      // Bayesian m-estimate smoothing: (accepted + m * prior) / (total + m)
+      const smoothedRate = (stats.accepted + BAYESIAN_M * prior) / (stats.total + BAYESIAN_M);
+      const multiplier = 0.5 + smoothedRate * 1.0;
+      const rawWeight = prior * multiplier;
+
+      // Apply strict min/max weight bounds to prevent wild oscillation
+      const boundedWeight = Math.min(MAX_WEIGHT_BOUND, Math.max(MIN_WEIGHT_BOUND, rawWeight));
+      unnormalized[key] = boundedWeight;
+      sumUnnormalized += boundedWeight;
     }
 
-    if (totalEvolved === 0 || Number.isNaN(totalEvolved)) {
-      return BASE_WEIGHTS;
-    }
-
-    // Renormalize so weights sum strictly to 1.0
+    const finalWeights: SignalWeights = { ...BASE_WEIGHTS };
     for (const key of ["keyword", "competitor", "content", "visibility"] as const) {
-      evolved[key] = evolved[key] / totalEvolved;
+      finalWeights[key] = unnormalized[key] / sumUnnormalized;
+      const stats = statsMap.get(key) || { accepted: 0, dismissed: 0, total: 0 };
+      explanations[key] = `Evolved weight ${(finalWeights[key] * 100).toFixed(1)}% (from ${stats.accepted}/${stats.total} positive conversions, Bayesian smoothed).`;
     }
 
-    return evolved;
+    return {
+      weights: finalWeights,
+      explanations,
+      isColdStart: false,
+      sampleCount: grandTotalDecisions,
+    };
   } catch {
-    return BASE_WEIGHTS;
+    return {
+      weights: { ...BASE_WEIGHTS },
+      explanations: { default: "Fallback to baseline weights due to database error." },
+      isColdStart: true,
+      sampleCount: 0,
+    };
   }
+}
+
+/**
+ * Computes evolved signal weights dynamically from historical feedback conversion rates.
+ */
+export async function getEvolvedSignalWeights(brandId: string): Promise<SignalWeights> {
+  const result = await getEvolvedSignalWeightsWithAudit(brandId);
+  return result.weights;
 }
 
 /**

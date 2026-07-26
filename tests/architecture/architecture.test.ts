@@ -4,7 +4,7 @@ import * as path from "path";
 import { JOB_PAYLOAD_SCHEMAS } from "@/lib/jobs/types";
 
 describe("Architecture Validation Suite", () => {
-  it("enforces 'server-only' imports in all server-bound library modules (fails if file missing)", () => {
+  it("enforces 'server-only' imports in all server-bound library modules", () => {
     const serverFiles = [
       "src/lib/jobs/worker.ts",
       "src/lib/content/pipeline/runner.ts",
@@ -15,6 +15,10 @@ describe("Architecture Validation Suite", () => {
       "src/lib/ai/cost-optimizer.ts",
       "src/lib/knowledge-graph/extractor.ts",
       "src/lib/ai/visibility/monitoring.ts",
+      "src/lib/publishing/publish.ts",
+      "src/lib/recommendations/continuous-learning.ts",
+      "src/lib/recommendations/rank.ts",
+      "src/lib/diagnostics/telemetry.ts",
     ];
 
     for (const fileRel of serverFiles) {
@@ -41,10 +45,18 @@ describe("Architecture Validation Suite", () => {
     }
   });
 
+  it("prohibits forbidden external dependencies (Redis, Kafka, BullMQ, RabbitMQ)", () => {
+    const pkgPath = path.join(process.cwd(), "package.json");
+    const pkgContent = fs.readFileSync(pkgPath, "utf-8");
+    const forbidden = ["redis", "ioredis", "kafka", "kafkajs", "bull", "bullmq", "amqplib"];
+    for (const lib of forbidden) {
+      expect(pkgContent).not.toContain(`"${lib}"`);
+    }
+  });
+
   it("prohibits circular imports between recommendations and content pipeline", () => {
     const runnerPath = path.join(process.cwd(), "src/lib/content/pipeline/runner.ts");
     const runnerContent = fs.readFileSync(runnerPath, "utf-8");
-    // Verify pipeline runner does not import recommendations rank module directly
     expect(runnerContent).not.toContain('from "@/lib/recommendations/rank"');
   });
 

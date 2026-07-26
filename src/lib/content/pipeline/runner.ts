@@ -25,6 +25,7 @@ import {
   runFactCheckStage,
   runSchemaGeneratorStage,
 } from "@/lib/content/pipeline/stages";
+import { buildExecutionGraph } from "@/lib/content/pipeline/dag";
 import { searchBrandDocuments } from "@/lib/brand-brain/search";
 import { getActiveCampaignContext, formatCampaignMemoryPrompt } from "@/lib/campaigns/memory";
 import { getBrandGraphContext } from "@/lib/knowledge-graph/extractor";
@@ -107,76 +108,43 @@ export async function runPipeline(
   let totalTokens = run.totalTokens;
 
   try {
-    // Stage 1-4: Sequential writing core
-    const sequentialStages: PipelineStage[] = ["research", "strategy", "outline", "writer"];
+    // Build topological execution graph levels
+    const executionLevels = buildExecutionGraph();
 
-    for (const stage of sequentialStages) {
-      if (stageOutputs[stage]) continue; // Skip if already completed
+    for (const level of executionLevels) {
+      // Filter out stages already completed
+      const pendingStages = level.filter((stage) => !stageOutputs[stage]);
+      if (pendingStages.length === 0) continue;
 
-      const stepResult = await executeStageWithCaching(
-        stage,
-        run.brandId,
-        runId,
-        briefContext,
-        stageOutputs,
-        retrievedChunks,
+      // Update current run status
+      await db
+        .update(contentPipelineRuns)
+        .set({ status: "running", currentStage: pendingStages[0], updatedAt: new Date() })
+        .where(eq(contentPipelineRuns.id, runId));
+
+      // Execute all ready stages in the current topological level concurrently
+      const results = await Promise.all(
+        pendingStages.map((stage) =>
+          executeStageWithCaching(stage, run.brandId, runId, briefContext, stageOutputs, retrievedChunks),
+        ),
       );
-      if (!stepResult.ok) return { status: "failed" };
 
-      stageOutputs[stage] = stepResult.output;
-      totalCostCents += stepResult.costCents;
-      totalTokens += stepResult.tokensUsed;
+      for (let i = 0; i < pendingStages.length; i++) {
+        const stage = pendingStages[i];
+        const res = results[i];
+
+        if (!res.ok) return { status: "failed" };
+
+        stageOutputs[stage] = res.output;
+        totalCostCents += res.costCents;
+        totalTokens += res.tokensUsed;
+      }
 
       await db
         .update(contentPipelineRuns)
-        .set({ totalCostCents, totalTokens, currentStage: stage, updatedAt: new Date() })
+        .set({ totalCostCents, totalTokens, updatedAt: new Date() })
         .where(eq(contentPipelineRuns.id, runId));
     }
-
-    // Stage 5-8: Parallel DAG execution for post-writing stages
-    await db
-      .update(contentPipelineRuns)
-      .set({ status: "running", currentStage: "editor", updatedAt: new Date() })
-      .where(eq(contentPipelineRuns.id, runId));
-
-    if (!stageOutputs.editor) {
-      const editorRes = await executeStageWithCaching("editor", run.brandId, runId, briefContext, stageOutputs, retrievedChunks);
-      if (!editorRes.ok) return { status: "failed" };
-      stageOutputs.editor = editorRes.output;
-      totalCostCents += editorRes.costCents;
-      totalTokens += editorRes.tokensUsed;
-    }
-
-    if (!stageOutputs.seo_optimizer) {
-      const seoRes = await executeStageWithCaching("seo_optimizer", run.brandId, runId, briefContext, stageOutputs, retrievedChunks);
-      if (!seoRes.ok) return { status: "failed" };
-      stageOutputs.seo_optimizer = seoRes.output;
-      totalCostCents += seoRes.costCents;
-      totalTokens += seoRes.tokensUsed;
-    }
-
-    // Fact Check & Schema Generator execute concurrently
-    const factCheckPromise = stageOutputs.fact_check
-      ? Promise.resolve({ ok: true, output: stageOutputs.fact_check, costCents: 0, tokensUsed: 0 })
-      : executeStageWithCaching("fact_check", run.brandId, runId, briefContext, stageOutputs, retrievedChunks);
-
-    const schemaPromise = stageOutputs.schema_generator
-      ? Promise.resolve({ ok: true, output: stageOutputs.schema_generator, costCents: 0, tokensUsed: 0 })
-      : executeStageWithCaching("schema_generator", run.brandId, runId, briefContext, stageOutputs, retrievedChunks);
-
-    const [factCheckRes, schemaRes] = await Promise.all([factCheckPromise, schemaPromise]);
-
-    if (!factCheckRes.ok || !schemaRes.ok) return { status: "failed" };
-
-    stageOutputs.fact_check = factCheckRes.output;
-    stageOutputs.schema_generator = schemaRes.output;
-    totalCostCents += factCheckRes.costCents + schemaRes.costCents;
-    totalTokens += factCheckRes.tokensUsed + schemaRes.tokensUsed;
-
-    await db
-      .update(contentPipelineRuns)
-      .set({ totalCostCents, totalTokens, updatedAt: new Date() })
-      .where(eq(contentPipelineRuns.id, runId));
 
     // Persist Article and run AI Evaluation Engine
     const articleId = await persistArticle(run.brandId, run.briefId, stageOutputs);

@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "crypto";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { promptVersions, promptVersionTelemetry } from "@/db/schema";
@@ -31,17 +32,28 @@ export type PromptPerformanceReport = {
 };
 
 /**
- * Gets the active prompt version for a key and optional brand override.
+ * Computes a deterministic integer bucket value (0-99) for traffic allocation percentage checks.
+ */
+export function computeBucketValue(seed: string): number {
+  const hashHex = createHash("sha256").update(seed).digest("hex").slice(0, 8);
+  const intVal = parseInt(hashHex, 16);
+  return intVal % 100;
+}
+
+/**
+ * Gets the active prompt version for a key with deterministic traffic allocation & brand override checks.
  */
 export async function getActivePromptVersion(
   promptKey: string,
   brandId?: string,
+  actorUserId?: string,
 ): Promise<PromptVersionRecord | null> {
   const db = getDb();
-  
-  // Check brand-specific active prompt override first
+  const bucketValue = computeBucketValue(`${brandId || "global"}:${actorUserId || "default"}:${promptKey}`);
+
+  // 1. Check brand-specific active prompt override first
   if (brandId) {
-    const [override] = await db
+    const brandVersions = await db
       .select({
         id: promptVersions.id,
         promptKey: promptVersions.promptKey,
@@ -55,14 +67,17 @@ export async function getActivePromptVersion(
       })
       .from(promptVersions)
       .where(and(eq(promptVersions.promptKey, promptKey), eq(promptVersions.brandId, brandId), eq(promptVersions.isActive, true)))
-      .orderBy(desc(promptVersions.createdAt))
-      .limit(1);
+      .orderBy(desc(promptVersions.createdAt));
 
-    if (override) return override;
+    for (const v of brandVersions) {
+      if (bucketValue < v.trafficPercentage) {
+        return v;
+      }
+    }
   }
 
-  // Fallback to global active prompt
-  const [globalActive] = await db
+  // 2. Fallback to global active prompts with traffic allocation checks
+  const globalVersions = await db
     .select({
       id: promptVersions.id,
       promptKey: promptVersions.promptKey,
@@ -76,10 +91,15 @@ export async function getActivePromptVersion(
     })
     .from(promptVersions)
     .where(and(eq(promptVersions.promptKey, promptKey), eq(promptVersions.isActive, true)))
-    .orderBy(desc(promptVersions.createdAt))
-    .limit(1);
+    .orderBy(desc(promptVersions.createdAt));
 
-  return globalActive || null;
+  for (const v of globalVersions) {
+    if (bucketValue < v.trafficPercentage) {
+      return v;
+    }
+  }
+
+  return globalVersions[0] || null;
 }
 
 /**
@@ -109,7 +129,7 @@ export async function createPromptVersion(
         promptText: input.promptText,
         brandId: input.brandId ?? null,
         experimentName: input.experimentName ?? null,
-        trafficPercentage: input.trafficPercentage ?? 100,
+        trafficPercentage: Math.min(100, Math.max(1, input.trafficPercentage ?? 100)),
         isActive: true,
       })
       .returning({ id: promptVersions.id });
@@ -121,7 +141,7 @@ export async function createPromptVersion(
 }
 
 /**
- * Rolls back to a prior prompt version by deactivating current active versions and activating target version.
+ * Rolls back to a prior prompt version after strict prompt key, tenant, and experiment validation.
  */
 export async function rollbackPromptVersion(
   promptKey: string,
@@ -132,7 +152,26 @@ export async function rollbackPromptVersion(
     if (brandId) await requireRoleOrThrow(brandId, "admin");
     const db = getDb();
 
-    // Deactivate currently active versions for key
+    // Verify target version existence and key/tenant matching to prevent cross-brand rollback mistakes
+    const [target] = await db
+      .select()
+      .from(promptVersions)
+      .where(eq(promptVersions.id, targetVersionId))
+      .limit(1);
+
+    if (!target) {
+      return { ok: false, error: `Target prompt version ${targetVersionId} not found.` };
+    }
+
+    if (target.promptKey !== promptKey) {
+      return { ok: false, error: `Prompt key mismatch: target version belongs to "${target.promptKey}", expected "${promptKey}".` };
+    }
+
+    if (brandId && target.brandId !== brandId) {
+      return { ok: false, error: `Tenant isolation violation: target prompt version belongs to another brand.` };
+    }
+
+    // Deactivate currently active versions for key & brand scope
     await db
       .update(promptVersions)
       .set({ isActive: false })
@@ -142,7 +181,7 @@ export async function rollbackPromptVersion(
           : eq(promptVersions.promptKey, promptKey),
       );
 
-    // Activate target
+    // Activate target version
     await db
       .update(promptVersions)
       .set({ isActive: true, activationDate: new Date() })
