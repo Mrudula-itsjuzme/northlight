@@ -8,3 +8,4 @@ export * from "./ai-visibility";
 export * from "./growth";
 export * from "./billing";
 export * from "./jobs";
+export * from "./intelligence";
