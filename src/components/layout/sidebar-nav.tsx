@@ -68,7 +68,9 @@ export function SidebarNav() {
                   "rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
                   item.badge === "AI"
                     ? "bg-violet-500/15 text-violet-500 border border-violet-500/20"
-                    : "bg-emerald-500/15 text-emerald-500 border border-emerald-500/20",
+                    : item.badge === "Live"
+                    ? "bg-emerald-500/15 text-emerald-500 border border-emerald-500/20"
+                    : "bg-cyan-500/15 text-cyan-500 border border-cyan-500/20",
                 )}
               >
                 {item.badge}

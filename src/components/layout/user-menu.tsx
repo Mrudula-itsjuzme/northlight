@@ -1,5 +1,6 @@
 "use client";
 
+import { useTransition } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { LogOut, Sparkles } from "lucide-react";
 import { logout } from "@/lib/auth/actions";
@@ -7,6 +8,13 @@ import { Button } from "@/components/ui/button";
 
 export function UserMenu({ email }: { email: string | null }) {
   const initial = email ? email.charAt(0).toUpperCase() : "U";
+  const [isPending, startTransition] = useTransition();
+
+  function handleLogout() {
+    startTransition(async () => {
+      await logout();
+    });
+  }
 
   return (
     <DropdownMenu.Root>
@@ -32,16 +40,13 @@ export function UserMenu({ email }: { email: string | null }) {
             <p className="text-xs text-muted-foreground">Signed in as</p>
             <p className="text-xs font-semibold truncate text-foreground">{email ?? "User"}</p>
           </div>
-          <DropdownMenu.Item asChild>
-            <form action={logout} className="w-full">
-              <button
-                type="submit"
-                className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-destructive outline-none hover:bg-destructive/10 transition-colors"
-              >
-                <LogOut className="h-4 w-4" />
-                Sign Out
-              </button>
-            </form>
+          <DropdownMenu.Item
+            onSelect={handleLogout}
+            disabled={isPending}
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-destructive outline-none hover:bg-destructive/10 transition-colors disabled:opacity-50"
+          >
+            <LogOut className="h-4 w-4" />
+            {isPending ? "Signing Out..." : "Sign Out"}
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
