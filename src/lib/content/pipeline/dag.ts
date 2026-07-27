@@ -1,3 +1,4 @@
+import { config } from "@/lib/config";
 import type { PipelineStage } from "./schemas";
 
 export type StageNodeConfig = {
@@ -14,56 +15,56 @@ export const PIPELINE_DAG_NODES: Record<PipelineStage, StageNodeConfig> = {
     dependencies: [],
     canRunInParallel: false,
     maxRetries: 3,
-    backoffMs: 1000,
+    backoffMs: config.ai.defaultChunkSize,
   },
   strategy: {
     stage: "strategy",
     dependencies: ["research"],
     canRunInParallel: false,
     maxRetries: 3,
-    backoffMs: 1000,
+    backoffMs: config.ai.defaultChunkSize,
   },
   outline: {
     stage: "outline",
     dependencies: ["strategy"],
     canRunInParallel: false,
     maxRetries: 3,
-    backoffMs: 1000,
+    backoffMs: config.ai.defaultChunkSize,
   },
   writer: {
     stage: "writer",
     dependencies: ["outline"],
     canRunInParallel: false,
     maxRetries: 3,
-    backoffMs: 1000,
+    backoffMs: config.ai.defaultChunkSize,
   },
   editor: {
     stage: "editor",
     dependencies: ["writer"],
     canRunInParallel: true,
     maxRetries: 2,
-    backoffMs: 1500,
+    backoffMs: config.ai.defaultChunkOverlap * 10,
   },
   seo_optimizer: {
     stage: "seo_optimizer",
     dependencies: ["editor"],
     canRunInParallel: true,
     maxRetries: 2,
-    backoffMs: 1500,
+    backoffMs: config.ai.defaultChunkOverlap * 10,
   },
   fact_check: {
     stage: "fact_check",
     dependencies: ["seo_optimizer", "research"],
     canRunInParallel: true,
     maxRetries: 2,
-    backoffMs: 1500,
+    backoffMs: config.ai.defaultChunkOverlap * 10,
   },
   schema_generator: {
     stage: "schema_generator",
     dependencies: ["seo_optimizer"],
     canRunInParallel: true,
     maxRetries: 2,
-    backoffMs: 1500,
+    backoffMs: config.ai.defaultChunkOverlap * 10,
   },
 };
 

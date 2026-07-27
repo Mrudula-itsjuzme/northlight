@@ -1,4 +1,5 @@
 import "server-only";
+import { config } from "@/lib/config";
 import type { VisibilityAdapter, VisibilityCheckResult } from "@/lib/ai/visibility/adapter";
 import { parseVisibilityResponse } from "@/lib/ai/visibility/parse";
 
@@ -8,14 +9,14 @@ export function createOpenAiVisibilityAdapter(): VisibilityAdapter {
     isDemo: false,
     adapterState: "live",
     async check(prompt: string, brandName: string): Promise<VisibilityCheckResult> {
-      const apiKey = process.env.OPENAI_API_KEY;
+      const apiKey = config.openai.apiKey;
       if (!apiKey) {
         throw new Error("OPENAI_API_KEY is not configured.");
       }
-      const model = process.env.OPENAI_CHAT_MODEL ?? "gpt-4o-mini";
+      const model = config.openai.chatModel;
       const startTime = Date.now();
 
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      const response = await fetch(`${config.openai.apiBaseUrl}${config.openai.chatCompletionsPath}`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -24,7 +25,7 @@ export function createOpenAiVisibilityAdapter(): VisibilityAdapter {
         body: JSON.stringify({
           model,
           messages: [{ role: "user", content: prompt }],
-          temperature: 0.3,
+          temperature: config.openai.visibilityTemperature,
         }),
       });
 

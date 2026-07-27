@@ -36,7 +36,7 @@ const csp = [
   `style-src 'self'`,
   `img-src 'self' data: blob: ${supabaseOrigin()}`,
   `font-src 'self' data:`,
-  `connect-src 'self' ${supabaseOrigin()}`,
+  `connect-src 'self' ${supabaseOrigin()} ${supabaseOrigin()}/api`,
   `frame-src 'none'`,
   `frame-ancestors 'none'`,
   `object-src 'none'`,

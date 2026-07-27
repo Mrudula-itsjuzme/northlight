@@ -1,4 +1,5 @@
 import "server-only";
+import { config } from "@/lib/config";
 import type { ExtractableSourceType } from "@/lib/brand-brain/extract-text";
 
 /**
@@ -14,7 +15,7 @@ import type { ExtractableSourceType } from "@/lib/brand-brain/extract-text";
 /** Hard cap on upload size. Chosen to comfortably fit real brand documents
  * (style guides, product catalogs) while bounding memory/CPU spent
  * buffering + parsing (PDF/DOCX parsing holds the whole buffer in memory). */
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB
+export const MAX_UPLOAD_BYTES = config.ai.maxUploadBytes;
 
 export type UploadRejectionReason =
   | "too_large"

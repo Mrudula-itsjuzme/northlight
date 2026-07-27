@@ -1,4 +1,5 @@
 import "server-only";
+import { config } from "@/lib/config";
 
 /**
  * Minimal in-process token-bucket rate limiter.
@@ -54,15 +55,15 @@ export function perWindow(capacity: number, windowMs: number): RateLimitConfig {
 export const RATE_LIMITS = {
   // AI generation triggers: brief creation + pipeline runs are the most
   // expensive operations in the app (LLM calls when configured).
-  contentBrief: perWindow(10, 60_000), // 10 briefs / minute / brand
-  pipelineRun: perWindow(5, 60_000), // 5 pipeline runs / minute / brand
+  contentBrief: perWindow(config.rateLimits.contentBrief.capacity, config.rateLimits.contentBrief.windowMs),
+  pipelineRun: perWindow(config.rateLimits.pipelineRun.capacity, config.rateLimits.pipelineRun.windowMs),
   // AI visibility checks fan out to up to 6 platform adapters per call.
-  visibilitySnapshot: perWindow(10, 60_000), // 10 snapshots / minute / brand
+  visibilitySnapshot: perWindow(config.rateLimits.visibilitySnapshot.capacity, config.rateLimits.visibilitySnapshot.windowMs),
   // Document upload: parsing PDFs/DOCX is CPU-bound; also a vector for
   // resource-exhaustion abuse if unbounded.
-  documentUpload: perWindow(10, 60_000), // 10 uploads / minute / brand
+  documentUpload: perWindow(config.rateLimits.documentUpload.capacity, config.rateLimits.documentUpload.windowMs),
   // Invite sending: prevent spamming invite emails / token generation.
-  inviteSend: perWindow(20, 3_600_000), // 20 invites / hour / brand
+  inviteSend: perWindow(config.rateLimits.inviteSend.capacity, config.rateLimits.inviteSend.windowMs),
 } as const satisfies Record<string, RateLimitConfig>;
 
 function getBucket(key: string, capacity: number): Bucket {

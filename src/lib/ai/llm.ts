@@ -1,5 +1,6 @@
 import "server-only";
 import { type z } from "zod";
+import { config } from "@/lib/config";
 
 export type ExecutionMode = "live" | "demo" | "test";
 
@@ -36,7 +37,7 @@ export function getExecutionMode(): ExecutionMode {
   if (envMode === "live" || envMode === "demo" || envMode === "test") {
     return envMode as ExecutionMode;
   }
-  return process.env.OPENAI_API_KEY ? "live" : "demo";
+  return config.openai.apiKey ? "live" : "demo";
 }
 
 function calculateCostCents(
@@ -86,16 +87,16 @@ export async function executeLlmCall<T>(
   }
 
   // Live mode
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = config.openai.apiKey;
   if (!apiKey) {
     throw new Error(
       "AI_EXECUTION_MODE is set to 'live' but OPENAI_API_KEY is not configured in the environment.",
     );
   }
 
-  const model = options.model ?? process.env.OPENAI_CHAT_MODEL ?? "gpt-4o-mini";
-  const timeoutMs = options.timeoutMs ?? 30000;
-  const maxRetries = options.maxRetries ?? 2;
+  const model = options.model ?? config.openai.chatModel;
+  const timeoutMs = options.timeoutMs ?? config.openai.defaultTimeoutMs;
+  const maxRetries = options.maxRetries ?? config.openai.maxRetries;
 
   const messages = [];
   if (options.systemPrompt) {
@@ -115,7 +116,7 @@ export async function executeLlmCall<T>(
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      const response = await fetch(`${config.openai.apiBaseUrl}${config.openai.chatCompletionsPath}`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -125,7 +126,7 @@ export async function executeLlmCall<T>(
           model,
           messages,
           response_format: { type: "json_object" },
-          temperature: 0.2,
+          temperature: config.openai.temperature,
         }),
         signal: controller.signal,
       });

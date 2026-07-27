@@ -1,3 +1,5 @@
+import { config } from "@/lib/config";
+
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
 export type LogContext = {
@@ -13,15 +15,15 @@ function formatLog(level: LogLevel, message: string, context?: LogContext) {
     timestamp: new Date().toISOString(),
     level,
     message,
-    environment: process.env.NODE_ENV ?? "development",
-    executionMode: process.env.AI_EXECUTION_MODE ?? "demo",
+    environment: config.app.env,
+    executionMode: config.ai.executionMode,
     ...context,
   });
 }
 
 export const logger = {
   debug(message: string, context?: LogContext) {
-    if (process.env.NODE_ENV !== "production") {
+    if (!config.app.isProduction) {
       console.debug(formatLog("debug", message, context));
     }
   },

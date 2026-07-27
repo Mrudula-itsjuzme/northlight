@@ -25,6 +25,7 @@ import {
   type BrandListItem,
 } from "@/lib/brands/types";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { config } from "@/lib/config";
 
 export type { ActionResult, BrandListItem };
 
@@ -191,7 +192,7 @@ export async function switchActiveBrand(
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 24 * 365,
+    maxAge: 60 * 60 * 24 * config.cookie.maxAgeDays,
   });
 
   revalidatePath("/", "layout");
@@ -241,8 +242,8 @@ export async function inviteMember(
     if (!limit.ok) return limit;
 
     const db = getDb();
-    const token = randomBytes(24).toString("hex");
-    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7); // 7 days
+    const token = randomBytes(config.invite.tokenBytes).toString("hex");
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * config.invite.expiryDays);
 
     const [invite] = await db
       .insert(invites)

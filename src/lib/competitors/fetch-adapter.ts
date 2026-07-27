@@ -1,5 +1,6 @@
 import "server-only";
 import * as cheerio from "cheerio";
+import { config } from "@/lib/config";
 
 /**
  * Real (scoped) competitor page fetch + parse adapter.
@@ -43,9 +44,9 @@ export type FetchAdapterResult =
   | { ok: true; signals: PageSignals }
   | { ok: false; reason: FetchAdapterFailureReason; detail: string };
 
-const FETCH_TIMEOUT_MS = 8_000;
-const MAX_RESPONSE_BYTES = 2 * 1024 * 1024; // 2MB
-const USER_AGENT = "NorthlightBot/1.0 (+https://northlight.app/bot)";
+const FETCH_TIMEOUT_MS = config.competitor.fetchTimeoutMs;
+const MAX_RESPONSE_BYTES = config.competitor.maxResponseBytes;
+const USER_AGENT = config.competitor.userAgent;
 
 /** Fetches a URL with a hard timeout, aborting the request if it's exceeded. */
 async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {

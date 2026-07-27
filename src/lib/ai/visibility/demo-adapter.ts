@@ -1,5 +1,6 @@
 import type { AiPlatformKey, VisibilityAdapter, VisibilityCheckResult, Sentiment } from "@/lib/ai/visibility/adapter";
 import { parseVisibilityResponse } from "@/lib/ai/visibility/parse";
+import { config } from "@/lib/config";
 
 function fnv1a(str: string): number {
   let hash = 2166136261;
@@ -14,7 +15,7 @@ function seededFloat(seed: string): number {
   return fnv1a(seed) / 0xffffffff;
 }
 
-const COMPETITOR_NAMES = ["Rivalia", "Glowmane", "Silkcurl Co", "Tresora"];
+const COMPETITOR_NAMES = config.brand.demoCompetitors;
 
 function buildDemoResponseText(platform: AiPlatformKey, prompt: string, brandName: string): string {
   const seed = `${platform}:${prompt}:${brandName}`;

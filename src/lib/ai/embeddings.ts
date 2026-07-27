@@ -1,6 +1,7 @@
 import "server-only";
+import { config } from "@/lib/config";
 
-export const EMBEDDING_DIMENSIONS = 1536;
+export const EMBEDDING_DIMENSIONS = config.ai.embeddingDimensions;
 
 export type EmbeddingAdapterName = "openai" | "demo_hash";
 
@@ -72,13 +73,13 @@ export function demoHashEmbedding(text: string): number[] {
 }
 
 async function openAiEmbedding(text: string): Promise<number[]> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = config.openai.apiKey;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not configured.");
   }
-  const model = process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small";
+  const model = config.openai.embeddingModel;
 
-  const response = await fetch("https://api.openai.com/v1/embeddings", {
+  const response = await fetch(`${config.openai.apiBaseUrl}${config.openai.embeddingsPath}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -117,7 +118,7 @@ async function openAiEmbedding(text: string): Promise<number[]> {
  * caller (the job worker), which records them on the job row.
  */
 export async function embedText(text: string): Promise<EmbeddingResult> {
-  if (process.env.OPENAI_API_KEY) {
+  if (config.openai.apiKey) {
     const embedding = await openAiEmbedding(text);
     return { embedding, adapter: "openai", isDemo: false };
   }

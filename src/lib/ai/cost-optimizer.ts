@@ -1,4 +1,5 @@
 import "server-only";
+import { config } from "@/lib/config";
 import type { PipelineStage } from "@/lib/content/pipeline/schemas";
 
 export type ModelRoutingOptions = {
@@ -22,60 +23,66 @@ export type ModelRoutingDecision = {
   };
 };
 
-const VALID_MODELS = new Set(["gpt-4o-mini", "gpt-4o", "o3-mini", "o1-mini", "gpt-4-turbo"]);
+const VALID_MODELS = new Set([
+  config.openai.chatModel,
+  "gpt-4o",
+  "o3-mini",
+  "o1-mini",
+  "gpt-4-turbo",
+]);
 
 const STAGE_MODEL_MAP: Record<string, ModelRoutingDecision> = {
   research: {
-    model: "gpt-4o-mini",
+    model: config.ai.costOptimizer.defaultModel,
     provider: "openai",
     routingReason: "Lightweight entity extraction and context compilation.",
     estimatedCostMultiplier: 0.1,
     routingMetadata: { stage: "research", complexity: "low", budgetConstrained: false, overrideApplied: false },
   },
   strategy: {
-    model: "gpt-4o",
+    model: config.ai.costOptimizer.highCapacityModel,
     provider: "openai",
     routingReason: "High-reasoning strategic outline positioning and search intent mapping.",
     estimatedCostMultiplier: 1.0,
     routingMetadata: { stage: "strategy", complexity: "high", budgetConstrained: false, overrideApplied: false },
   },
   outline: {
-    model: "gpt-4o-mini",
+    model: config.ai.costOptimizer.defaultModel,
     provider: "openai",
     routingReason: "Fast structured heading & section generation.",
     estimatedCostMultiplier: 0.1,
     routingMetadata: { stage: "outline", complexity: "low", budgetConstrained: false, overrideApplied: false },
   },
   writer: {
-    model: "gpt-4o",
+    model: config.ai.costOptimizer.highCapacityModel,
     provider: "openai",
     routingReason: "High-capacity creative prose synthesis and brand voice adherence.",
     estimatedCostMultiplier: 1.0,
     routingMetadata: { stage: "writer", complexity: "high", budgetConstrained: false, overrideApplied: false },
   },
   editor: {
-    model: "gpt-4o-mini",
+    model: config.ai.costOptimizer.defaultModel,
     provider: "openai",
     routingReason: "Grammar, readability, and structural polisher.",
     estimatedCostMultiplier: 0.1,
     routingMetadata: { stage: "editor", complexity: "low", budgetConstrained: false, overrideApplied: false },
   },
   seo_optimizer: {
-    model: "gpt-4o-mini",
+    model: config.ai.costOptimizer.defaultModel,
     provider: "openai",
     routingReason: "Keyword density analysis and meta header optimization.",
     estimatedCostMultiplier: 0.1,
     routingMetadata: { stage: "seo_optimizer", complexity: "low", budgetConstrained: false, overrideApplied: false },
   },
   fact_check: {
-    model: "gpt-4o",
+    model: config.ai.costOptimizer.highCapacityModel,
     provider: "openai",
     routingReason: "Precision claim extraction and verification against grounded sources.",
     estimatedCostMultiplier: 1.0,
     routingMetadata: { stage: "fact_check", complexity: "critical", budgetConstrained: false, overrideApplied: false },
   },
   schema_generator: {
-    model: "gpt-4o-mini",
+    model: config.ai.costOptimizer.defaultModel,
     provider: "openai",
     routingReason: "Structured JSON-LD schema markup synthesis.",
     estimatedCostMultiplier: 0.1,
@@ -115,7 +122,7 @@ export function resolveModelRouting(
   // 2. Budget Limit Constraints check
   if (options?.tenantBudgetExceeded) {
     return {
-      model: "gpt-4o-mini",
+      model: config.ai.costOptimizer.defaultModel,
       provider: "openai",
       routingReason: `Tenant monthly budget limit exceeded for stage "${normalizedStage}"; forced cost-aware fallback.`,
       estimatedCostMultiplier: 0.1,
@@ -129,9 +136,9 @@ export function resolveModelRouting(
   }
 
   // 3. High Token / Critical Complexity Routing check
-  if (options?.complexity === "critical" || (options?.estimatedTokens && options.estimatedTokens > 8000)) {
+  if (options?.complexity === "critical" || (options?.estimatedTokens && options.estimatedTokens > config.ai.costOptimizer.tokenThresholdHigh)) {
     return {
-      model: "gpt-4o",
+      model: config.ai.costOptimizer.highCapacityModel,
       provider: "openai",
       routingReason: `High payload complexity (${options.estimatedTokens ?? "N/A"} tokens) routed to high-capacity reasoning model.`,
       estimatedCostMultiplier: 1.0,
@@ -148,7 +155,7 @@ export function resolveModelRouting(
   if (defaultDecision) return defaultDecision;
 
   return {
-    model: "gpt-4o-mini",
+    model: config.ai.costOptimizer.defaultModel,
     provider: "openai",
     routingReason: "Default cost-optimized fallback model for unrecognized pipeline stage.",
     estimatedCostMultiplier: 0.1,

@@ -1,4 +1,5 @@
 import "server-only";
+import { config } from "@/lib/config";
 import type {
   PublishingAdapter,
   PublishingDestination,
@@ -12,7 +13,7 @@ export class DemoPublishingAdapter implements PublishingAdapter {
 
   async publish(article: ArticleToPublish): Promise<PublishResult> {
     const externalId = `pub-demo-${article.id.slice(0, 8)}`;
-    const publishedUrl = `https://example.com/blog/${article.slug}`;
+    const publishedUrl = `${config.publishing.demoBaseUrl}/${article.slug}`;
     return {
       externalId,
       publishedUrl,

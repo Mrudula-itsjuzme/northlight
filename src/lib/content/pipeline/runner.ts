@@ -1,6 +1,7 @@
 import "server-only";
 import { eq, and, asc } from "drizzle-orm";
 import { getDb } from "@/db";
+import { config } from "@/lib/config";
 import {
   contentPipelineRuns,
   contentPipelineSteps,
@@ -104,7 +105,7 @@ export async function runPipeline(
 
   if (campaignPrompt || graphContext) {
     const rawCombined = `${briefContext.targetAudience || ""}\n${campaignPrompt}\n${graphContext}`.trim();
-    briefContext.targetAudience = rawCombined.slice(0, 1000);
+    briefContext.targetAudience = rawCombined.slice(0, config.ai.defaultChunkSize);
   }
 
   // 3. Retrieve DB-backed revisions
@@ -259,7 +260,7 @@ async function executeStageWithCaching(
   const stageConfig = PIPELINE_DAG_NODES[stage];
   const promptVersion = await getActivePromptRevision(stage, brandId);
   const configRevision = getPipelineConfigRevision(stage);
-  const executionMode = process.env.AI_EXECUTION_MODE || "demo";
+  const executionMode = config.ai.executionMode;
 
   // Dynamic cost routing decision with multi-factor estimation
   const estimatedTokens = 1500;
@@ -314,7 +315,7 @@ async function executeStageWithCaching(
     try {
       if (attempt > 1) {
         const backoff = stageConfig.backoffMs * Math.pow(2, attempt - 2);
-        await new Promise((res) => setTimeout(res, Math.min(backoff, 2000)));
+        await new Promise((res) => setTimeout(res, Math.min(backoff, config.ai.defaultChunkSize * 2)));
       }
 
       const result = await runStage(stage, briefContext, stageOutputs, retrievedChunks);

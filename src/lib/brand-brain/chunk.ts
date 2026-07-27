@@ -3,8 +3,10 @@ export type Chunk = {
   content: string;
 };
 
-export const DEFAULT_CHUNK_SIZE = 1000; // characters
-export const DEFAULT_CHUNK_OVERLAP = 150; // characters
+import { config } from "@/lib/config";
+
+export const DEFAULT_CHUNK_SIZE = config.ai.defaultChunkSize; // characters
+export const DEFAULT_CHUNK_OVERLAP = config.ai.defaultChunkOverlap; // characters
 
 /**
  * Fixed-size character chunking with overlap, breaking on whitespace near
