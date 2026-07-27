@@ -61,6 +61,14 @@ export async function extractText(
 
     case "pdf": {
       ensureNodeDomPolyfills();
+      try {
+        const pdfjs = await import("pdfjs-dist");
+        if (pdfjs?.GlobalWorkerOptions) {
+          pdfjs.GlobalWorkerOptions.workerSrc = "";
+        }
+      } catch {
+        // Ignore if pdfjs-dist config is handled by pdf-parse internal fallback
+      }
       const { PDFParse } = await import("pdf-parse");
       const parser = new PDFParse({ data: new Uint8Array(buffer) });
       try {
