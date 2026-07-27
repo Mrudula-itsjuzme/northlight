@@ -4,14 +4,22 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { PromptList } from "./prompt-list";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Eye, AlertCircle, Sparkles, Bot } from "lucide-react";
+import { VISIBILITY_PLATFORMS } from "@/config/visibility";
 
-const PLATFORMS = [
-  { name: "ChatGPT", color: "from-emerald-500 to-teal-600", status: "Live/Demo Adapter" },
-  { name: "Claude", color: "from-purple-500 to-indigo-600", status: "Demo Adapter" },
-  { name: "Gemini", color: "from-cyan-500 to-blue-600", status: "Demo Adapter" },
-  { name: "Perplexity", color: "from-amber-500 to-orange-600", status: "Demo Adapter" },
-  { name: "Copilot", color: "from-pink-500 to-rose-600", status: "Demo Adapter" },
-];
+const PLATFORM_COLORS: Record<string, string> = {
+  chatgpt: "from-emerald-500 to-teal-600",
+  claude: "from-purple-500 to-indigo-600",
+  gemini: "from-cyan-500 to-blue-600",
+  perplexity: "from-amber-500 to-orange-600",
+  copilot: "from-pink-500 to-rose-600",
+  ai_overviews: "from-red-500 to-amber-600",
+};
+
+const PLATFORMS = Object.values(VISIBILITY_PLATFORMS).map((p) => ({
+  name: p.displayName,
+  color: PLATFORM_COLORS[p.key] ?? "from-violet-500 to-cyan-600",
+  status: p.hasLiveProvider ? "Live/Demo Adapter" : "Demo Adapter",
+}));
 
 export default async function VisibilityPage() {
   const brandId = await getActiveBrandId();
@@ -40,7 +48,7 @@ export default async function VisibilityPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-3xl font-bold tracking-tight text-gradient-purple">AI Visibility Radar</h1>
             <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary border border-primary/20">
-              <Eye className="h-3.5 w-3.5" /> 6 Engines Tracked
+              <Eye className="h-3.5 w-3.5" /> {PLATFORMS.length} Engines Tracked
             </span>
           </div>
           <p className="text-sm text-muted-foreground max-w-3xl">

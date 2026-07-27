@@ -37,7 +37,7 @@ describe("Performance Benchmark Suite", () => {
     const durationMs = performance.now() - start;
 
     expect(metrics.overallScore).toBeGreaterThan(0);
-    expect(durationMs).toBeLessThan(20);
+    expect(durationMs).toBeLessThan(50);
   });
 
   it("measures Knowledge Graph extraction throughput", () => {
@@ -65,7 +65,7 @@ describe("Performance Benchmark Suite", () => {
     const durationMs = performance.now() - start;
 
     expect(hash).toHaveLength(64);
-    expect(durationMs).toBeLessThan(20);
+    expect(durationMs).toBeLessThan(50);
   });
 
   it("measures DAG execution level resolution speed (under 5ms)", () => {

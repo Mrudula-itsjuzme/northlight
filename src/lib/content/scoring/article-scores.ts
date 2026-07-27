@@ -1,3 +1,5 @@
+import { config } from "@/lib/config";
+
 /**
  * Deterministic heuristic scoring for SEO / EEAT / AI-readiness, 0-100
  * each. NOT an LLM judgment call — every sub-score is a simple, auditable
@@ -46,16 +48,16 @@ function clamp(value: number, min = 0, max = 100): number {
 
 /**
  * SEO score (0-100), weighted sum of 5 checks (20 points each):
- *   1. Meta title present and <= 60 chars (ideal length for SERP display).
- *   2. Meta description present and <= 155 chars.
+ *   1. Meta title present and <= maxMetaTitleChars (ideal length for SERP display).
+ *   2. Meta description present and <= maxMetaDescChars.
  *   3. Primary keyword appears in the meta title.
  *   4. Primary keyword appears at least once in the body.
  *   5. Body has at least one H2 heading (structure signal).
  */
 export function computeSeoScore(input: ArticleScoringInput): number {
   let score = 0;
-  if (input.metaTitle.length > 0 && input.metaTitle.length <= 60) score += 20;
-  if (input.metaDescription.length > 0 && input.metaDescription.length <= 155) score += 20;
+  if (input.metaTitle.length > 0 && input.metaTitle.length <= config.scoring.article.maxMetaTitleChars) score += 20;
+  if (input.metaDescription.length > 0 && input.metaDescription.length <= config.scoring.article.maxMetaDescChars) score += 20;
   if (input.metaTitle.toLowerCase().includes(input.primaryKeyword.toLowerCase())) score += 20;
   if (countOccurrences(stripHtml(input.bodyHtml), input.primaryKeyword) > 0) score += 20;
   if (/<h2[\s>]/i.test(input.bodyHtml)) score += 20;
@@ -65,23 +67,17 @@ export function computeSeoScore(input: ArticleScoringInput): number {
 /**
  * EEAT score (0-100, Experience/Expertise/Authoritativeness/Trust), 4
  * checks (25 points each):
- *   1. Body length >= 300 words (baseline depth of coverage).
+ *   1. Body length >= minEeatWordCount (baseline depth of coverage).
  *   2. At least one heading contains a "why"/"how"/"what" pattern
  *      (signals explanatory, expertise-demonstrating structure).
  *   3. Zero unresolved claims (unresolved factual claims are a trust risk).
  *   4. All claims that exist are either resolved or overridden with an
- *      audit trail (claimCount > 0 implies the article was fact-checked
- *      at all — an article with zero claims recorded gets partial credit
- *      here since "checked and found nothing to verify" is weaker than
- *      "checked and verified", but stronger than never being checked is
- *      not distinguishable from this signal alone, so this check awards
- *      full credit whenever unresolvedClaimCount is 0, matching check 3
- *      structurally but rewarding at the whole-article level).
+ *      audit trail.
  */
 export function computeEeatScore(input: ArticleScoringInput): number {
   const wordCount = stripHtml(input.bodyHtml).split(/\s+/).filter(Boolean).length;
   let score = 0;
-  if (wordCount >= 300) score += 25;
+  if (wordCount >= config.scoring.article.minEeatWordCount) score += 25;
   if (/why|how|what/i.test(input.bodyHtml)) score += 25;
   if (input.unresolvedClaimCount === 0) score += 25;
   if (input.claimCount === 0 || input.unresolvedClaimCount === 0) score += 25;
@@ -90,22 +86,18 @@ export function computeEeatScore(input: ArticleScoringInput): number {
 
 /**
  * AI-readiness score (0-100): how well-structured this content is for
- * being surfaced/cited by generative AI answer engines (directional
- * heuristic only, never a guarantee of actual AI citation — see the AI
- * Visibility methodology in Phase 9). 4 checks (25 points each):
+ * being surfaced/cited by generative AI answer engines. 4 checks (25 points each):
  *   1. Valid JSON-LD schema present (`hasJsonLd`).
- *   2. Body contains an FAQ-style heading (helps question-answering
- *      extraction).
- *   3. Body has at least 2 headings (H2/H3) — scannable structure.
- *   4. Meta description is present (concise summary AI systems often
- *      lean on for snippet generation).
+ *   2. Body contains an FAQ-style heading.
+ *   3. Body has at least minAiReadinessHeadings headings (H2/H3).
+ *   4. Meta description is present.
  */
 export function computeAiReadinessScore(input: ArticleScoringInput): number {
   let score = 0;
   if (input.hasJsonLd) score += 25;
   if (/faq|frequently asked/i.test(input.bodyHtml)) score += 25;
   const headingCount = (input.bodyHtml.match(/<h[23][\s>]/gi) ?? []).length;
-  if (headingCount >= 2) score += 25;
+  if (headingCount >= config.scoring.article.minAiReadinessHeadings) score += 25;
   if (input.metaDescription.length > 0) score += 25;
   return clamp(score);
 }

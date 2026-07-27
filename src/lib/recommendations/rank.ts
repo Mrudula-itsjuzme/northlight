@@ -1,4 +1,5 @@
 import "server-only";
+import { config } from "@/lib/config";
 
 /**
  * Recommendation ranking engine. Consumes normalized signals from
@@ -91,19 +92,14 @@ function calculateFreshnessFactor(createdAt?: Date): number {
   return Math.max(0.2, Math.exp(-0.02 * ageInDays));
 }
 
-const SOURCE_WEIGHTS = {
-  keyword: 0.3,
-  competitor: 0.3,
-  content: 0.2,
-  visibility: 0.2,
-} as const;
+export const SOURCE_WEIGHTS = config.recommendations.sourceWeights;
 
 function recommendationsFromKeywords(keywords: KeywordSignal[]): RankedRecommendation[] {
   return keywords
-    .filter((k) => k.priorityScore >= 0.5)
+    .filter((k) => k.priorityScore >= config.recommendations.thresholds.keywordMinPriority)
     .map((k) => {
       const freshnessFactor = calculateFreshnessFactor(k.createdAt);
-      const confidence = 0.7;
+      const confidence = config.recommendations.confidence.keyword;
       const baseScore = k.priorityScore;
       const rankScore = baseScore * SOURCE_WEIGHTS.keyword;
 
@@ -136,7 +132,7 @@ function recommendationsFromKeywords(keywords: KeywordSignal[]): RankedRecommend
 function recommendationsFromGaps(gaps: GapSignal[]): RankedRecommendation[] {
   return gaps.map((g) => {
     const freshnessFactor = calculateFreshnessFactor(g.createdAt);
-    const confidence = 0.6;
+    const confidence = config.recommendations.confidence.competitor;
     const baseScore = g.priorityScore;
     const rankScore = baseScore * SOURCE_WEIGHTS.competitor;
     const estimatedEffort = g.type === "schema" || g.type === "faq" ? "low" : "high";
@@ -176,16 +172,16 @@ function recommendationsFromContent(content: ContentSignal[]): RankedRecommendat
     );
     if (scores.length === 0) continue;
     const avgScore = scores.reduce((sum, s) => sum + s, 0) / scores.length;
-    if (avgScore >= 80) continue;
+    if (avgScore >= config.recommendations.thresholds.contentMaxAvgScore) continue;
 
     const gapScore = (100 - avgScore) / 100;
     const freshnessFactor = calculateFreshnessFactor(article.createdAt);
-    const confidence = 0.8;
+    const confidence = config.recommendations.confidence.content;
     const rankScore = gapScore * SOURCE_WEIGHTS.content;
 
     recs.push({
       title: `Improve "${article.title}" before publishing`,
-      reason: `Average SEO/EEAT/AI-readiness score is ${avgScore.toFixed(0)}/100, below the 80 threshold.`,
+      reason: `Average SEO/EEAT/AI-readiness score is ${avgScore.toFixed(0)}/100, below the ${config.recommendations.thresholds.contentMaxAvgScore} threshold.`,
       evidence: {
         articleId: article.articleId,
         seoScore: article.seoScore,
@@ -227,10 +223,10 @@ function recommendationsFromVisibility(visibility: VisibilitySignal[]): RankedRe
   for (const [, snapshots] of Array.from(byPrompt.entries())) {
     const notMentionedCount = snapshots.filter((s) => !s.mentioned).length;
     const gapRatio = notMentionedCount / snapshots.length;
-    if (gapRatio < 0.5) continue;
+    if (gapRatio < config.recommendations.thresholds.visibilityGapRatio) continue;
 
     const freshnessFactor = calculateFreshnessFactor(snapshots[0].createdAt);
-    const confidence = 0.5;
+    const confidence = config.recommendations.confidence.visibility;
     const rankScore = gapRatio * SOURCE_WEIGHTS.visibility;
 
     recs.push({

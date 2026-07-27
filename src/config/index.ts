@@ -9,6 +9,8 @@ import { limitsConfig, limitsConfigSchema } from "./limits";
 import { jobsConfig, jobsConfigSchema } from "./jobs";
 import { FEATURE_FLAGS_REGISTRY } from "./featureFlags";
 import { PROVIDER_REGISTRY } from "./providers";
+import { recommendationsConfig, recommendationsConfigSchema } from "./recommendations";
+import { scoringConfig, scoringConfigSchema } from "./scoring";
 
 export * from "./providers";
 export * from "./ai";
@@ -20,6 +22,8 @@ export * from "./knowledgeGraph";
 export * from "./limits";
 export * from "./jobs";
 export * from "./featureFlags";
+export * from "./recommendations";
+export * from "./scoring";
 
 /**
  * Validates configuration schemas across all modules and fails fast if invalid.
@@ -30,6 +34,8 @@ export function validateConfiguration(): void {
   visibilityConfigSchema.parse(visibilityConfig);
   limitsConfigSchema.parse(limitsConfig);
   jobsConfigSchema.parse(jobsConfig);
+  recommendationsConfigSchema.parse(recommendationsConfig);
+  scoringConfigSchema.parse(scoringConfig);
 
   if (Object.keys(PROVIDER_REGISTRY).length === 0) {
     throw new Error("Validation Error: Provider Registry is empty.");
@@ -124,6 +130,9 @@ export const config = {
   cookie: limitsConfig.cookie,
   invite: limitsConfig.invite,
   cache: cacheConfig,
+  recommendations: recommendationsConfig,
+  scoring: scoringConfig,
 } as const;
 
 export type UnifiedConfig = typeof config;
+

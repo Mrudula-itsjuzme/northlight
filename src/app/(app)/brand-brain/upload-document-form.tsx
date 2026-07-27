@@ -19,8 +19,8 @@ export function UploadDocumentForm({ brandId }: { brandId: string }) {
     setError(null);
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      const result = await uploadBrandDocument(brandId, file.name, buffer);
+      const base64 = Buffer.from(arrayBuffer).toString("base64");
+      const result = await uploadBrandDocument(brandId, file.name, base64);
       if (!result.ok) {
         setError(result.error);
         return;

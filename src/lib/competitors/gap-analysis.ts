@@ -1,4 +1,5 @@
 import type { GapReportType } from "@/lib/validation/competitors";
+import { config } from "@/lib/config";
 
 export type GapFinding = {
   title: string;
@@ -111,7 +112,7 @@ export function generateGapReport(
     });
   }
 
-  const severityWeight = { low: 0.2, medium: 0.5, high: 0.9 };
+  const severityWeight = config.scoring.gapAnalysis.severityWeights;
   const avgSeverity =
     findings.reduce((sum, f) => sum + severityWeight[f.severity], 0) / findings.length;
   const priorityScore = Math.round(avgSeverity * 1000) / 1000;

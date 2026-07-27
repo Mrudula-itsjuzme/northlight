@@ -40,8 +40,11 @@ function toActionError(err: unknown, fallback: string): ActionResult<never> {
 export async function uploadBrandDocument(
   brandId: string,
   filename: string,
-  fileBuffer: Buffer,
+  fileBufferOrBase64: Buffer | string,
 ): Promise<ActionResult<{ documentId: string }>> {
+  const fileBuffer = typeof fileBufferOrBase64 === "string"
+    ? Buffer.from(fileBufferOrBase64, "base64")
+    : Buffer.from(fileBufferOrBase64);
   const sourceType = sourceTypeFromFilename(filename);
   if (!sourceType) {
     return {

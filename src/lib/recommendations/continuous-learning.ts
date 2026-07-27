@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { recommendationFeedback } from "@/db/schema";
 import { requireRoleOrThrow } from "@/lib/brands/require-role";
 import type { ActionResult } from "@/lib/brands/types";
+import { config } from "@/lib/config";
 
 export type FeedbackAction = "accepted" | "ignored" | "dismissed" | "postponed" | "manually_edited";
 
@@ -55,17 +56,12 @@ export type EvolvedWeightsResult = {
   sampleCount: number;
 };
 
-const BASE_WEIGHTS: SignalWeights = {
-  keyword: 0.3,
-  competitor: 0.3,
-  content: 0.2,
-  visibility: 0.2,
-};
+const BASE_WEIGHTS: SignalWeights = config.recommendations.sourceWeights;
 
-const MIN_SAMPLE_THRESHOLD = 5;
-const BAYESIAN_M = 4; // Pseudo-count weight for Bayesian m-estimate smoothing
-const MIN_WEIGHT_BOUND = 0.05;
-const MAX_WEIGHT_BOUND = 0.40;
+const MIN_SAMPLE_THRESHOLD = config.recommendations.learning.minSampleThreshold;
+const BAYESIAN_M = config.recommendations.learning.bayesianM;
+const MIN_WEIGHT_BOUND = config.recommendations.learning.minWeightBound;
+const MAX_WEIGHT_BOUND = config.recommendations.learning.maxWeightBound;
 
 /**
  * Computes evolved signal weights using Bayesian m-estimate smoothing, sample thresholds, and weight bounds.
