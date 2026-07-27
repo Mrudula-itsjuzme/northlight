@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
+import { isRedirectError } from "@/lib/utils";
 import { Plus, Sparkles } from "lucide-react";
 
 export function AddKeywordForm({ brandId }: { brandId: string }) {
@@ -45,9 +46,7 @@ export function AddKeywordForm({ brandId }: { brandId: string }) {
       reset();
       router.refresh();
     } catch (err) {
-      if (typeof err === "object" && err !== null && "message" in err && String(err.message).includes("NEXT_REDIRECT")) {
-        return;
-      }
+      if (isRedirectError(err)) return;
       setServerError(err instanceof Error ? err.message : "Failed to add keyword.");
     } finally {
       setPending(false);

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { seedDemoKeywords } from "@/lib/onboarding/actions";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
+import { isRedirectError } from "@/lib/utils";
 import { Sparkles, CheckCircle2, Rocket } from "lucide-react";
 
 export function KeywordsStep({ brandId }: { brandId: string }) {
@@ -26,9 +27,7 @@ export function KeywordsStep({ brandId }: { brandId: string }) {
       router.push("/dashboard");
       router.refresh();
     } catch (err) {
-      if (typeof err === "object" && err !== null && "message" in err && String(err.message).includes("NEXT_REDIRECT")) {
-        return;
-      }
+      if (isRedirectError(err)) return;
       setError(err instanceof Error ? err.message : "Failed to seed demo keywords.");
     } finally {
       setPending(false);

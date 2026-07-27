@@ -30,6 +30,7 @@ export function PromptList({
 }) {
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const {
     register,
@@ -39,10 +40,15 @@ export function PromptList({
   } = useForm<AiPromptInput>({ resolver: zodResolver(aiPromptSchema) });
 
   async function onSubmit(values: AiPromptInput) {
-    const result = await createAiPrompt(brandId, values);
-    if (result.ok) {
-      reset();
-      router.refresh();
+    setSubmitting(true);
+    try {
+      const result = await createAiPrompt(brandId, values);
+      if (result.ok) {
+        reset();
+        router.refresh();
+      }
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -83,8 +89,16 @@ export function PromptList({
             <p className="mt-1 text-xs text-rose-400 font-medium">{errors.promptText.message}</p>
           )}
         </div>
-        <Button type="submit" variant="gradient" className="w-full sm:w-auto shrink-0 gap-1.5 shadow-glow">
-          <Plus className="h-4 w-4" /> Add Prompt Query
+        <Button type="submit" variant="gradient" disabled={submitting} className="w-full sm:w-auto shrink-0 gap-1.5 shadow-glow">
+          {submitting ? (
+            <>
+              <Sparkles className="h-4 w-4 animate-spin" /> Adding...
+            </>
+          ) : (
+            <>
+              <Plus className="h-4 w-4" /> Add Prompt Query
+            </>
+          )}
         </Button>
       </form>
 

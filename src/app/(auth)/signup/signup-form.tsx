@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
+import { isRedirectError } from "@/lib/utils";
 import { User, Mail, Lock, ArrowRight, Sparkles, CheckCircle2 } from "lucide-react";
 
 export function SignupForm() {
@@ -38,9 +39,7 @@ export function SignupForm() {
         }
       }
     } catch (err) {
-      if (typeof err === "object" && err !== null && "message" in err && String(err.message).includes("NEXT_REDIRECT")) {
-        return;
-      }
+      if (isRedirectError(err)) return;
       setServerError(err instanceof Error ? err.message : "An unexpected error occurred during sign up.");
     } finally {
       setPending(false);

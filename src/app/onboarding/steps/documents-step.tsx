@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
+import { isRedirectError } from "@/lib/utils";
 import { FileText, Plus, ArrowRight, Sparkles } from "lucide-react";
 
 export function DocumentsStep({ brandId }: { brandId: string }) {
@@ -43,9 +44,7 @@ export function DocumentsStep({ brandId }: { brandId: string }) {
       setAddedCount((c) => c + 1);
       reset();
     } catch (err) {
-      if (typeof err === "object" && err !== null && "message" in err && String(err.message).includes("NEXT_REDIRECT")) {
-        return;
-      }
+      if (isRedirectError(err)) return;
       setServerError(err instanceof Error ? err.message : "Failed to add document text.");
     } finally {
       setPending(false);

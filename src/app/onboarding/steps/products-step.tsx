@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import type { CsvRowError } from "@/lib/csv/parse-products";
 import { ErrorState } from "@/components/ui/error-state";
+import { isRedirectError } from "@/lib/utils";
 import { Package, Plus, UploadCloud, ArrowRight, Sparkles, CheckCircle2 } from "lucide-react";
 
 export function ProductsStep({ brandId }: { brandId: string }) {
@@ -43,9 +44,7 @@ export function ProductsStep({ brandId }: { brandId: string }) {
       setAddedCount((c) => c + 1);
       reset();
     } catch (err) {
-      if (typeof err === "object" && err !== null && "message" in err && String(err.message).includes("NEXT_REDIRECT")) {
-        return;
-      }
+      if (isRedirectError(err)) return;
       setServerError(err instanceof Error ? err.message : "Failed to add product.");
     } finally {
       setPending(false);
@@ -67,9 +66,7 @@ export function ProductsStep({ brandId }: { brandId: string }) {
       setCsvResult(result.data);
       setAddedCount((c) => c + result.data.imported);
     } catch (err) {
-      if (typeof err === "object" && err !== null && "message" in err && String(err.message).includes("NEXT_REDIRECT")) {
-        return;
-      }
+      if (isRedirectError(err)) return;
       setServerError(err instanceof Error ? err.message : "Failed to import CSV.");
     } finally {
       setCsvPending(false);
