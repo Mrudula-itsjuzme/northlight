@@ -13,12 +13,13 @@ function ensureNodeDomPolyfills() {
       m41 = 0; m42 = 0; m43 = 0; m44 = 1;
       is2D = true;
       isIdentity = true;
-      constructor(init?: any) {
+      constructor(init?: unknown) {
         if (Array.isArray(init) && init.length >= 6) {
-          this.a = init[0]; this.b = init[1]; this.c = init[2];
-          this.d = init[3]; this.e = init[4]; this.f = init[5];
-          this.m11 = init[0]; this.m12 = init[1]; this.m21 = init[2];
-          this.m22 = init[3]; this.m41 = init[4]; this.m42 = init[5];
+          const nums = init as number[];
+          this.a = nums[0]; this.b = nums[1]; this.c = nums[2];
+          this.d = nums[3]; this.e = nums[4]; this.f = nums[5];
+          this.m11 = nums[0]; this.m12 = nums[1]; this.m21 = nums[2];
+          this.m22 = nums[3]; this.m41 = nums[4]; this.m42 = nums[5];
         }
       }
       translate() { return this; }
@@ -26,17 +27,19 @@ function ensureNodeDomPolyfills() {
       multiply() { return this; }
       rotate() { return this; }
       inverse() { return this; }
-      transformPoint(p: any) { return p; }
+      transformPoint(p: unknown) { return p; }
       toFloat32Array() { return new Float32Array([this.a, this.b, this.c, this.d, this.e, this.f]); }
       toFloat64Array() { return new Float64Array([this.a, this.b, this.c, this.d, this.e, this.f]); }
     }
-    (globalThis as any).DOMMatrix = DOMMatrixPolyfill;
+    const g = globalThis as unknown as Record<string, unknown>;
+    g.DOMMatrix = DOMMatrixPolyfill;
   }
+  const g = globalThis as unknown as Record<string, unknown>;
   if (typeof globalThis.Path2D === "undefined") {
-    (globalThis as any).Path2D = class Path2D {};
+    g.Path2D = class Path2D {};
   }
   if (typeof globalThis.ImageData === "undefined") {
-    (globalThis as any).ImageData = class ImageData {};
+    g.ImageData = class ImageData {};
   }
 }
 
