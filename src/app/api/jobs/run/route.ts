@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { runWorkerOnce } from "@/lib/jobs/worker";
 import { config } from "@/lib/config";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization");

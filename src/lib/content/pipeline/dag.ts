@@ -1,4 +1,4 @@
-import { config } from "@/lib/config";
+import { PIPELINE_STAGE_REGISTRY } from "@/config/pipeline";
 import type { PipelineStage } from "./schemas";
 
 export type StageNodeConfig = {
@@ -9,64 +9,18 @@ export type StageNodeConfig = {
   backoffMs: number;
 };
 
-export const PIPELINE_DAG_NODES: Record<PipelineStage, StageNodeConfig> = {
-  research: {
-    stage: "research",
-    dependencies: [],
-    canRunInParallel: false,
-    maxRetries: 3,
-    backoffMs: config.ai.defaultChunkSize,
-  },
-  strategy: {
-    stage: "strategy",
-    dependencies: ["research"],
-    canRunInParallel: false,
-    maxRetries: 3,
-    backoffMs: config.ai.defaultChunkSize,
-  },
-  outline: {
-    stage: "outline",
-    dependencies: ["strategy"],
-    canRunInParallel: false,
-    maxRetries: 3,
-    backoffMs: config.ai.defaultChunkSize,
-  },
-  writer: {
-    stage: "writer",
-    dependencies: ["outline"],
-    canRunInParallel: false,
-    maxRetries: 3,
-    backoffMs: config.ai.defaultChunkSize,
-  },
-  editor: {
-    stage: "editor",
-    dependencies: ["writer"],
-    canRunInParallel: true,
-    maxRetries: 2,
-    backoffMs: config.ai.defaultChunkOverlap * 10,
-  },
-  seo_optimizer: {
-    stage: "seo_optimizer",
-    dependencies: ["editor"],
-    canRunInParallel: true,
-    maxRetries: 2,
-    backoffMs: config.ai.defaultChunkOverlap * 10,
-  },
-  fact_check: {
-    stage: "fact_check",
-    dependencies: ["seo_optimizer", "research"],
-    canRunInParallel: true,
-    maxRetries: 2,
-    backoffMs: config.ai.defaultChunkOverlap * 10,
-  },
-  schema_generator: {
-    stage: "schema_generator",
-    dependencies: ["seo_optimizer"],
-    canRunInParallel: true,
-    maxRetries: 2,
-    backoffMs: config.ai.defaultChunkOverlap * 10,
-  },
-};
+export const PIPELINE_DAG_NODES: Record<PipelineStage, StageNodeConfig> = Object.fromEntries(
+  Object.entries(PIPELINE_STAGE_REGISTRY).map(([id, cfg]) => [
+    id,
+    {
+      stage: id as PipelineStage,
+      dependencies: cfg.dependencies as PipelineStage[],
+      canRunInParallel: cfg.parallelisable,
+      maxRetries: cfg.retryPolicy.maxRetries,
+      backoffMs: cfg.retryPolicy.backoffMs,
+    },
+  ]),
+) as Record<PipelineStage, StageNodeConfig>;
 
 /**
  * Validates graph structure and computes topological execution levels dynamically using Kahn's Algorithm.

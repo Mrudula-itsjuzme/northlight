@@ -3,11 +3,13 @@ import { AI_PLATFORM_KEYS, type AiPlatformKey, type VisibilityAdapter } from "@/
 import { createDemoVisibilityAdapter, createUnavailableVisibilityAdapter } from "@/lib/ai/visibility/demo-adapter";
 import { createOpenAiVisibilityAdapter } from "@/lib/ai/visibility/openai-adapter";
 import { getExecutionMode } from "@/lib/ai/llm";
+import { VISIBILITY_PLATFORMS } from "@/config/visibility";
 
 export function getVisibilityAdapter(platform: AiPlatformKey): VisibilityAdapter {
   const mode = getExecutionMode();
+  const platformConfig = VISIBILITY_PLATFORMS[platform];
 
-  if (platform === "chatgpt") {
+  if (platformConfig?.hasLiveProvider) {
     if (mode === "live" && process.env.OPENAI_API_KEY) {
       return createOpenAiVisibilityAdapter();
     }
@@ -17,7 +19,7 @@ export function getVisibilityAdapter(platform: AiPlatformKey): VisibilityAdapter
     return createDemoVisibilityAdapter(platform);
   }
 
-  // Non-ChatGPT platforms in live mode are explicitly unavailable (no live provider API integration)
+  // Non-live-provider platforms in live mode are explicitly unavailable
   if (mode === "live") {
     return createUnavailableVisibilityAdapter(platform);
   }

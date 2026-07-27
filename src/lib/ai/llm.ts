@@ -32,6 +32,9 @@ export type LlmCallOptions<T> = {
   fallbackGenerator?: () => T;
 };
 
+import { calculateModelCostCents } from "@/config/providers";
+import { aiConfig } from "@/config/ai";
+
 export function getExecutionMode(): ExecutionMode {
   const envMode = process.env.AI_EXECUTION_MODE?.toLowerCase();
   if (envMode === "live" || envMode === "demo" || envMode === "test") {
@@ -45,17 +48,7 @@ function calculateCostCents(
   promptTokens: number,
   completionTokens: number,
 ): number {
-  let promptRatePer1M = 15; // default gpt-4o-mini rates ($0.15 / 1M)
-  let completionRatePer1M = 60; // ($0.60 / 1M)
-
-  if (model.includes("gpt-4o") && !model.includes("mini")) {
-    promptRatePer1M = 250; // ($2.50 / 1M)
-    completionRatePer1M = 1000; // ($10.00 / 1M)
-  }
-
-  const promptCostCents = (promptTokens / 1_000_000) * promptRatePer1M;
-  const completionCostCents = (completionTokens / 1_000_000) * completionRatePer1M;
-  return Number((promptCostCents + completionCostCents).toFixed(4));
+  return calculateModelCostCents(model, promptTokens, completionTokens, "openai");
 }
 
 export async function executeLlmCall<T>(
@@ -63,7 +56,7 @@ export async function executeLlmCall<T>(
 ): Promise<LlmResult<T>> {
   const mode = getExecutionMode();
   const startTime = Date.now();
-  const promptVersion = options.promptVersion ?? "1.0";
+  const promptVersion = options.promptVersion ?? aiConfig.prompts.defaultVersion;
 
   if (mode === "demo" || mode === "test") {
     if (!options.fallbackGenerator) {

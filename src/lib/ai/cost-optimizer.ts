@@ -23,72 +23,30 @@ export type ModelRoutingDecision = {
   };
 };
 
-const VALID_MODELS = new Set([
-  config.openai.chatModel,
-  "gpt-4o",
-  "o3-mini",
-  "o1-mini",
-  "gpt-4-turbo",
-]);
+import { aiConfig } from "@/config/ai";
+import { PIPELINE_STAGE_REGISTRY } from "@/config/pipeline";
 
-const STAGE_MODEL_MAP: Record<string, ModelRoutingDecision> = {
-  research: {
-    model: config.ai.costOptimizer.defaultModel,
-    provider: "openai",
-    routingReason: "Lightweight entity extraction and context compilation.",
-    estimatedCostMultiplier: 0.1,
-    routingMetadata: { stage: "research", complexity: "low", budgetConstrained: false, overrideApplied: false },
-  },
-  strategy: {
-    model: config.ai.costOptimizer.highCapacityModel,
-    provider: "openai",
-    routingReason: "High-reasoning strategic outline positioning and search intent mapping.",
-    estimatedCostMultiplier: 1.0,
-    routingMetadata: { stage: "strategy", complexity: "high", budgetConstrained: false, overrideApplied: false },
-  },
-  outline: {
-    model: config.ai.costOptimizer.defaultModel,
-    provider: "openai",
-    routingReason: "Fast structured heading & section generation.",
-    estimatedCostMultiplier: 0.1,
-    routingMetadata: { stage: "outline", complexity: "low", budgetConstrained: false, overrideApplied: false },
-  },
-  writer: {
-    model: config.ai.costOptimizer.highCapacityModel,
-    provider: "openai",
-    routingReason: "High-capacity creative prose synthesis and brand voice adherence.",
-    estimatedCostMultiplier: 1.0,
-    routingMetadata: { stage: "writer", complexity: "high", budgetConstrained: false, overrideApplied: false },
-  },
-  editor: {
-    model: config.ai.costOptimizer.defaultModel,
-    provider: "openai",
-    routingReason: "Grammar, readability, and structural polisher.",
-    estimatedCostMultiplier: 0.1,
-    routingMetadata: { stage: "editor", complexity: "low", budgetConstrained: false, overrideApplied: false },
-  },
-  seo_optimizer: {
-    model: config.ai.costOptimizer.defaultModel,
-    provider: "openai",
-    routingReason: "Keyword density analysis and meta header optimization.",
-    estimatedCostMultiplier: 0.1,
-    routingMetadata: { stage: "seo_optimizer", complexity: "low", budgetConstrained: false, overrideApplied: false },
-  },
-  fact_check: {
-    model: config.ai.costOptimizer.highCapacityModel,
-    provider: "openai",
-    routingReason: "Precision claim extraction and verification against grounded sources.",
-    estimatedCostMultiplier: 1.0,
-    routingMetadata: { stage: "fact_check", complexity: "critical", budgetConstrained: false, overrideApplied: false },
-  },
-  schema_generator: {
-    model: config.ai.costOptimizer.defaultModel,
-    provider: "openai",
-    routingReason: "Structured JSON-LD schema markup synthesis.",
-    estimatedCostMultiplier: 0.1,
-    routingMetadata: { stage: "schema_generator", complexity: "low", budgetConstrained: false, overrideApplied: false },
-  },
-};
+const VALID_MODELS = new Set(aiConfig.costOptimizer.validModels);
+
+const STAGE_MODEL_MAP: Record<string, ModelRoutingDecision> = Object.fromEntries(
+  Object.entries(PIPELINE_STAGE_REGISTRY).map(([id, cfg]) => {
+    const isHigh = cfg.modelClass === "highCapacity";
+    const model = isHigh ? config.ai.costOptimizer.highCapacityModel : config.ai.costOptimizer.defaultModel;
+    const estimatedCostMultiplier = isHigh ? 1.0 : 0.1;
+    const complexity = id === "fact_check" ? "critical" : isHigh ? "high" : "low";
+
+    return [
+      id,
+      {
+        model,
+        provider: "openai" as const,
+        routingReason: `${cfg.displayName} stage routing via Pipeline Registry.`,
+        estimatedCostMultiplier,
+        routingMetadata: { stage: id, complexity, budgetConstrained: false, overrideApplied: false },
+      },
+    ];
+  }),
+);
 
 /**
  * Resolves optimal model and provider routing based on stage, estimated tokens, complexity, and tenant budget limits.

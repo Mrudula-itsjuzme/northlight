@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import { knowledgeGraphNodes, knowledgeGraphEdges } from "@/db/schema";
 import { requireRoleOrThrow } from "@/lib/brands/require-role";
 import type { ActionResult } from "@/lib/brands/types";
+import { getKnowledgeGraphProfile, type RelationshipType } from "@/config/knowledgeGraph";
 
 export type EntityCategory =
   | "product"
@@ -50,7 +51,7 @@ export function canonicalEntityKey(brandId: string, category: EntityCategory, na
 }
 
 /**
- * Domain entity extraction matching Brand Brain text patterns across 8 categories.
+ * Domain entity extraction matching Brand Brain text patterns driven by Knowledge Graph profile rules.
  */
 export function extractGraphElements(text: string): {
   entities: ExtractedEntity[];
@@ -60,47 +61,24 @@ export function extractGraphElements(text: string): {
   const rawRelationships: ExtractedRelationship[] = [];
   const lower = text.toLowerCase();
 
-  // 1. Products & Services
-  if (lower.includes("product") || lower.includes("platform") || lower.includes("tool") || lower.includes("app")) {
-    rawEntities.push({ name: "Core Product Platform", type: "product", confidence: 0.9 });
-  }
-  if (lower.includes("service") || lower.includes("consulting") || lower.includes("solution")) {
-    rawEntities.push({ name: "Professional Services", type: "service", confidence: 0.85 });
-  }
+  const kgProfile = getKnowledgeGraphProfile();
 
-  // 2. Competitors
-  if (lower.includes("competitor") || lower.includes("rival") || lower.includes("alternative")) {
-    rawEntities.push({ name: "Market Competitor", type: "competitor", confidence: 0.95 });
-    rawRelationships.push({
-      sourceEntityName: "Market Competitor",
-      targetEntityName: "Core Product Platform",
-      relationshipType: "competes_with",
-    });
-  }
+  for (const rule of kgProfile.extractionRules) {
+    if (rule.triggerKeywords.some((kw) => lower.includes(kw.toLowerCase()))) {
+      rawEntities.push({
+        name: rule.defaultName,
+        type: rule.category as EntityCategory,
+        confidence: rule.defaultConfidence,
+      });
 
-  // 3. Technologies
-  if (lower.includes("technology") || lower.includes("ai") || lower.includes("postgres") || lower.includes("drizzle") || lower.includes("next.js")) {
-    rawEntities.push({ name: "Intelligence Stack", type: "technology", confidence: 0.95 });
-    rawRelationships.push({
-      sourceEntityName: "Core Product Platform",
-      targetEntityName: "Intelligence Stack",
-      relationshipType: "uses",
-    });
-  }
-
-  // 4. Industries & Target Audience
-  if (lower.includes("enterprise") || lower.includes("saas") || lower.includes("industry") || lower.includes("b2b")) {
-    rawEntities.push({ name: "B2B Enterprise Industry", type: "industry", confidence: 0.88 });
-    rawRelationships.push({
-      sourceEntityName: "Core Product Platform",
-      targetEntityName: "B2B Enterprise Industry",
-      relationshipType: "targets",
-    });
-  }
-
-  // 5. Locations
-  if (lower.includes("global") || lower.includes("san francisco") || lower.includes("new york") || lower.includes("remote")) {
-    rawEntities.push({ name: "Global Presence", type: "location", confidence: 0.8 });
+      if (rule.autoRelationship) {
+        rawRelationships.push({
+          sourceEntityName: rule.autoRelationship.sourceEntityName || rule.defaultName,
+          targetEntityName: rule.autoRelationship.targetEntityName || rule.defaultName,
+          relationshipType: rule.autoRelationship.relationshipType as RelationshipType,
+        });
+      }
+    }
   }
 
   // Filter out self-referential edges and normalize names

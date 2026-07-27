@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { aiEvaluations, articles } from "@/db/schema";
 import { requireRoleOrThrow } from "@/lib/brands/require-role";
 import type { ActionResult } from "@/lib/brands/types";
+import { getEvaluationProfile, type CategoryWeights } from "@/config/evaluation";
 
 export type EvaluationMetrics = {
   overallScore: number;
@@ -209,8 +210,19 @@ export function computeEvaluation(input: EvaluateContentInput): EvaluationMetric
     citation_coverage: Math.min(1, Math.max(0, citationCoverageScore)),
   };
 
-  const scoreValues = Object.values(categoryScores);
-  const overallScore = scoreValues.reduce((sum, s) => sum + s, 0) / scoreValues.length;
+  const evalProfile = getEvaluationProfile(input.brandId);
+  const weights = evalProfile.categoryWeights;
+
+  let weightedSum = 0;
+  let totalWeight = 0;
+
+  for (const [cat, score] of Object.entries(categoryScores)) {
+    const w = weights[cat as keyof CategoryWeights] ?? 0.1;
+    weightedSum += score * w;
+    totalWeight += w;
+  }
+
+  const overallScore = totalWeight > 0 ? weightedSum / totalWeight : 0.01;
 
   const explanation = `Overall quality score: ${(overallScore * 100).toFixed(1)}/100. Flesch Reading Ease: ${fleschEase.toFixed(1)}. Grounding: ${(categoryScores.brand_brain_grounding * 100).toFixed(0)}%. SEO: ${(categoryScores.seo_quality * 100).toFixed(0)}%.`;
 
@@ -228,7 +240,7 @@ export function computeEvaluation(input: EvaluateContentInput): EvaluationMetric
     citationCoverageScore: categoryScores.citation_coverage,
     explanation,
     categoryScores,
-    evaluatorVersion: "v2.0.0",
+    evaluatorVersion: evalProfile.evaluatorVersion,
     methodologyDescription: "Multi-dimensional deterministic scoring combining Flesch Reading Ease, 3-gram phrase Jaccard grounding overlap, citation verification, and entity coverage ratios.",
     confidenceScore: claims.length > 0 && snippets.length > 0 ? 0.92 : 0.75,
     knownLimitations: [

@@ -16,13 +16,9 @@
  * normalization is applied to them.
  */
 
-export const PRIORITY_WEIGHTS = {
-  volume: 0.3,
-  difficulty: 0.25,
-  commercialIntent: 0.2,
-  trend: 0.15,
-  businessValue: 0.1,
-} as const;
+import { EVALUATION_PROFILES } from "@/config/evaluation";
+
+export const PRIORITY_WEIGHTS = EVALUATION_PROFILES.default.priorityWeights;
 
 export type RawKeywordMetrics = {
   rawVolume: number;

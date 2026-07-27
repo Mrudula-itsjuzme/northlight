@@ -1,4 +1,5 @@
 import "server-only";
+import { config } from "@/lib/config";
 import { eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { jobs } from "@/db/schema";
@@ -126,7 +127,7 @@ export async function claimNextJob(workerId = "worker-1"): Promise<ClaimedJob | 
   };
 }
 
-const RETRY_BACKOFF_MS = 30_000;
+const RETRY_BACKOFF_MS = config.jobs.retryBackoffMs;
 
 export type FailureOutcome =
   | { status: "queued"; runAt: Date }
@@ -177,7 +178,7 @@ export async function processJob(job: ClaimedJob): Promise<void> {
   }
 }
 
-export async function runWorkerOnce(maxJobs = 25): Promise<number> {
+export async function runWorkerOnce(maxJobs = config.jobs.maxJobsPerRun): Promise<number> {
   let processed = 0;
   while (processed < maxJobs) {
     const job = await claimNextJob();
