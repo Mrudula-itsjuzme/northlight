@@ -7,7 +7,8 @@ import { JOB_PAYLOAD_SCHEMAS, type JobType } from "@/lib/jobs/types";
 import { processDocument } from "@/lib/brand-brain/process-document";
 import { generateContentBrief } from "@/lib/content/brief";
 import { runPipeline } from "@/lib/content/pipeline/runner";
-import { persistGapReportsForCompetitor } from "@/lib/competitors/persist-gap-reports";
+import { persistGapReportsForCompetitor, persistGapReportsForCompetitorWithRealFetch } from "@/lib/competitors/persist-gap-reports";
+import { isBrandDemo } from "@/lib/brands/actions";
 import { persistVisibilitySnapshot } from "@/lib/ai/visibility/persist-snapshot";
 import { computeAndPersistRecommendations } from "@/lib/recommendations/compute-core";
 import { rescoreAllKeywords } from "@/lib/keywords/rescore";
@@ -37,7 +38,10 @@ async function handleRunContentPipeline(payload: unknown, brandId: string | null
 
 async function handleGenerateGapReport(payload: unknown): Promise<JobHandlerResult> {
   const { brandId, competitorId } = JOB_PAYLOAD_SCHEMAS.generate_gap_report.parse(payload);
-  const outcome = await persistGapReportsForCompetitor(brandId, competitorId);
+  const isDemo = await isBrandDemo(brandId);
+  const outcome = isDemo
+    ? await persistGapReportsForCompetitor(brandId, competitorId)
+    : await persistGapReportsForCompetitorWithRealFetch(brandId, competitorId);
   await recordUsageEvent(brandId, "gap_report_generation", outcome.reportCount, { competitorId });
   return { result: outcome };
 }

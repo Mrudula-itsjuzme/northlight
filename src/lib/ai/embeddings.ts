@@ -73,9 +73,9 @@ export function demoHashEmbedding(text: string): number[] {
 }
 
 async function openAiEmbedding(text: string): Promise<number[]> {
-  const apiKey = config.openai.apiKey;
+  const apiKey = config.openai.apiKey || process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is not configured.");
+    throw new Error("OPENAI_API_KEY or OPENROUTER_API_KEY is not configured.");
   }
   const model = config.openai.embeddingModel;
 
@@ -84,6 +84,8 @@ async function openAiEmbedding(text: string): Promise<number[]> {
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+      "X-Title": "Northlight",
     },
     body: JSON.stringify({ model, input: text }),
   });

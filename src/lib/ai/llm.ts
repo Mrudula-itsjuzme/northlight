@@ -40,7 +40,8 @@ export function getExecutionMode(): ExecutionMode {
   if (envMode === "live" || envMode === "demo" || envMode === "test") {
     return envMode as ExecutionMode;
   }
-  return config.openai.apiKey ? "live" : "demo";
+  const key = config.openai.apiKey || process.env.OPENROUTER_API_KEY;
+  return key ? "live" : "demo";
 }
 
 function sanitizeErrorMessage(msg: string): string {
@@ -84,7 +85,7 @@ export async function executeLlmCall<T>(
   }
 
   // Live mode
-  const apiKey = config.openai.apiKey;
+  const apiKey = config.openai.apiKey || process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error(
       "AI_EXECUTION_MODE is set to 'live' but OPENAI_API_KEY is not configured in the environment.",
@@ -118,6 +119,8 @@ export async function executeLlmCall<T>(
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
+          "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+          "X-Title": "Northlight",
         },
         body: JSON.stringify({
           model,
