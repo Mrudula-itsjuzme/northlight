@@ -3,13 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { eq, and, asc, desc, ilike, gte, lte, count } from "drizzle-orm";
 import { getDb } from "@/db";
-import { keywords, keywordClusters, clusterKeywords as clusterKeywordsTable, jobs } from "@/db/schema";
+import { keywords, keywordClusters, clusterKeywords as clusterKeywordsTable } from "@/db/schema";
 import { requireRoleOrThrow, RoleError } from "@/lib/brands/require-role";
 import { keywordSchema, keywordFilterSchema, type KeywordInput, type KeywordFilterInput } from "@/lib/validation/keywords";
 import { parseKeywordsCsv } from "@/lib/csv/parse-keywords";
 import { rescoreAllKeywords } from "@/lib/keywords/rescore";
 import { clusterKeywords as computeClusters } from "@/lib/scoring/cluster";
 import type { ActionResult } from "@/lib/brands/types";
+import { enqueueJob } from "@/lib/jobs/enqueue";
 import type { CsvRowError } from "@/lib/csv/parse-products";
 
 function toActionError(err: unknown, fallback: string): ActionResult<never> {
@@ -297,17 +298,10 @@ export async function generateBriefFromKeyword(
       return { ok: false, error: "Keyword not found." };
     }
 
-    const [job] = await db
-      .insert(jobs)
-      .values({
-        brandId,
-        type: "generate_content_brief",
-        payload: { keywordId },
-      })
-      .returning({ id: jobs.id });
+    const { id: jobId } = await enqueueJob("generate_content_brief", brandId, { brandId, keywordId });
 
     revalidatePath("/keywords");
-    return { ok: true, data: { jobId: job.id } };
+    return { ok: true, data: { jobId } };
   } catch (err) {
     return toActionError(err, "Failed to queue brief generation.");
   }

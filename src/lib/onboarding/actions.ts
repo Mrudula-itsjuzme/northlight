@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { stores, products, brandDocuments, jobs, keywords } from "@/db/schema";
+import { stores, products, brandDocuments, keywords } from "@/db/schema";
 import { requireRoleOrThrow, RoleError } from "@/lib/brands/require-role";
 import {
   storeSchema,
@@ -15,6 +15,8 @@ import {
 } from "@/lib/validation/products";
 import { parseProductsCsv, type CsvRowError } from "@/lib/csv/parse-products";
 import type { ActionResult } from "@/lib/brands/types";
+import { enqueueJob } from "@/lib/jobs/enqueue";
+import { processDocument } from "@/lib/brand-brain/process-document";
 
 function toActionError(err: unknown, fallback: string): ActionResult<never> {
   if (err instanceof RoleError) {
@@ -158,26 +160,34 @@ export async function addBrandDocumentText(
     await requireRoleOrThrow(brandId, "editor");
     const db = getDb();
 
-    const documentId = await db.transaction(async (tx) => {
-      const [doc] = await tx
-        .insert(brandDocuments)
-        .values({
-          brandId,
-          title: parsed.data.title,
-          sourceType: "typed_text",
-          rawText: parsed.data.rawText,
-          status: "pending",
-        })
-        .returning({ id: brandDocuments.id });
-
-      await tx.insert(jobs).values({
+    const [doc] = await db
+      .insert(brandDocuments)
+      .values({
         brandId,
-        type: "embed_brand_document",
-        payload: { brandDocumentId: doc.id },
-      });
+        title: parsed.data.title,
+        sourceType: "typed_text",
+        rawText: parsed.data.rawText,
+        status: "pending",
+      })
+      .returning({ id: brandDocuments.id });
 
-      return doc.id;
-    });
+    const documentId = doc.id;
+    let jobEnqueued = false;
+
+    try {
+      await enqueueJob("embed_brand_document", brandId, { brandDocumentId: documentId });
+      jobEnqueued = true;
+    } catch {
+      jobEnqueued = false;
+    }
+
+    if (!jobEnqueued && documentId) {
+      try {
+        await processDocument(documentId);
+      } catch {
+        // Document status set to failed in processDocument
+      }
+    }
 
     revalidatePath("/onboarding");
     return { ok: true, data: { documentId } };

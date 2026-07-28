@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { eq, and, desc } from "drizzle-orm";
 import { getDb } from "@/db";
-import { brandDocuments, jobs, brandDocumentChunks } from "@/db/schema";
+import { brandDocuments, brandDocumentChunks } from "@/db/schema";
 import { requireRoleOrThrow, RoleError } from "@/lib/brands/require-role";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import {
@@ -20,6 +20,7 @@ import {
 import { checkRateLimit } from "@/lib/rate-limit";
 
 import { processDocument } from "@/lib/brand-brain/process-document";
+import { enqueueJob } from "@/lib/jobs/enqueue";
 
 export type { BrandDocumentSummary };
 
@@ -93,36 +94,27 @@ export async function uploadBrandDocument(
     }
 
     const db = getDb();
-    let documentId = "";
+    const [doc] = await db
+      .insert(brandDocuments)
+      .values({
+        brandId,
+        title: filename,
+        sourceType: sourceType as ExtractableSourceType,
+        storagePath,
+        rawText: text,
+        status: "pending",
+      })
+      .returning({ id: brandDocuments.id });
+
+    const documentId = doc.id;
     let jobEnqueued = false;
 
-    await db.transaction(async (tx) => {
-      const [doc] = await tx
-        .insert(brandDocuments)
-        .values({
-          brandId,
-          title: filename,
-          sourceType: sourceType as ExtractableSourceType,
-          storagePath,
-          rawText: text,
-          status: "pending",
-        })
-        .returning({ id: brandDocuments.id });
-
-      documentId = doc.id;
-
-      try {
-        await tx.insert(jobs).values({
-          brandId,
-          type: "embed_brand_document",
-          payload: { brandDocumentId: doc.id },
-        });
-        jobEnqueued = true;
-      } catch {
-        // Job insert issue (e.g. queue schema/RLS restriction) — fallback to direct processDocument
-        jobEnqueued = false;
-      }
-    });
+    try {
+      await enqueueJob("embed_brand_document", brandId, { brandDocumentId: doc.id });
+      jobEnqueued = true;
+    } catch {
+      jobEnqueued = false;
+    }
 
     if (!jobEnqueued && documentId) {
       try {
@@ -213,24 +205,18 @@ export async function reindexBrandDocument(
       return { ok: false, error: "Document not found." };
     }
 
-    let jobEnqueued = false;
-    await db.transaction(async (tx) => {
-      await tx
-        .update(brandDocuments)
-        .set({ status: "pending", error: null })
-        .where(eq(brandDocuments.id, documentId));
+    await db
+      .update(brandDocuments)
+      .set({ status: "pending", error: null })
+      .where(eq(brandDocuments.id, documentId));
 
-      try {
-        await tx.insert(jobs).values({
-          brandId,
-          type: "embed_brand_document",
-          payload: { brandDocumentId: documentId },
-        });
-        jobEnqueued = true;
-      } catch {
-        jobEnqueued = false;
-      }
-    });
+    let jobEnqueued = false;
+    try {
+      await enqueueJob("embed_brand_document", brandId, { brandDocumentId: documentId });
+      jobEnqueued = true;
+    } catch {
+      jobEnqueued = false;
+    }
 
     if (!jobEnqueued) {
       try {
