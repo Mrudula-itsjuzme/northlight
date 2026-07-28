@@ -8,6 +8,9 @@ import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { UserMenu } from "@/components/layout/user-menu";
 import { MobileNav } from "@/components/layout/mobile-nav";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function AppLayout({
   children,
 }: {
