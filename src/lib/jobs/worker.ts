@@ -137,12 +137,10 @@ export async function claimNextJob(workerId = "worker-1"): Promise<ClaimedJob | 
     // Handle case where locked_at column doesn't exist on un-migrated Postgres schema instances
     if (code === "42703" || message.includes("locked_at")) {
       try {
-        await db.execute(sql`
-          ALTER TABLE jobs ADD COLUMN IF NOT EXISTS locked_at timestamp with time zone;
-          ALTER TABLE jobs ADD COLUMN IF NOT EXISTS locked_by text;
-          ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_attempt_at timestamp with time zone;
-          ALTER TABLE jobs ADD COLUMN IF NOT EXISTS idempotency_key text;
-        `);
+        await db.execute(sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS locked_at timestamp with time zone;`);
+        await db.execute(sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS locked_by text;`);
+        await db.execute(sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_attempt_at timestamp with time zone;`);
+        await db.execute(sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS idempotency_key text;`);
 
         const [claimed] = await db.execute<{
           id: string;
@@ -247,29 +245,52 @@ export async function processJob(job: ClaimedJob): Promise<void> {
 
     const { result } = await handler(job.payload, job.brandId);
 
-    await db
-      .update(jobs)
-      .set({
-        status: "succeeded",
-        completedAt: new Date(),
-        result: result ?? {},
-        error: null,
-        lockedAt: null,
-        lockedBy: null,
-      })
-      .where(eq(jobs.id, job.id));
+    try {
+      await db
+        .update(jobs)
+        .set({
+          status: "succeeded",
+          completedAt: new Date(),
+          result: result ?? {},
+          error: null,
+          lockedAt: null,
+          lockedBy: null,
+        })
+        .where(eq(jobs.id, job.id));
+    } catch {
+      await db
+        .update(jobs)
+        .set({
+          status: "succeeded",
+          completedAt: new Date(),
+          result: result ?? {},
+          error: null,
+        })
+        .where(eq(jobs.id, job.id));
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const outcome = decideFailureOutcome(job);
 
-    await db
-      .update(jobs)
-      .set(
-        outcome.status === "queued"
-          ? { status: "queued", error: message, runAt: outcome.runAt, lockedAt: null, lockedBy: null }
-          : { status: "failed", completedAt: new Date(), error: message, lockedAt: null, lockedBy: null },
-      )
-      .where(eq(jobs.id, job.id));
+    try {
+      await db
+        .update(jobs)
+        .set(
+          outcome.status === "queued"
+            ? { status: "queued", error: message, runAt: outcome.runAt, lockedAt: null, lockedBy: null }
+            : { status: "failed", completedAt: new Date(), error: message, lockedAt: null, lockedBy: null },
+        )
+        .where(eq(jobs.id, job.id));
+    } catch {
+      await db
+        .update(jobs)
+        .set(
+          outcome.status === "queued"
+            ? { status: "queued", error: message, runAt: outcome.runAt }
+            : { status: "failed", completedAt: new Date(), error: message },
+        )
+        .where(eq(jobs.id, job.id));
+    }
   }
 }
 
