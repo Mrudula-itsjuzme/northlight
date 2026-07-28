@@ -29,31 +29,31 @@ export const VISIBILITY_PLATFORMS: Record<AiPlatformKey, PlatformVisibilityConfi
   claude: {
     key: "claude",
     displayName: "Anthropic Claude",
-    hasLiveProvider: false,
+    hasLiveProvider: true,
     priority: 2,
   },
   gemini: {
     key: "gemini",
     displayName: "Google Gemini",
-    hasLiveProvider: false,
+    hasLiveProvider: true,
     priority: 3,
   },
   perplexity: {
     key: "perplexity",
     displayName: "Perplexity AI",
-    hasLiveProvider: false,
+    hasLiveProvider: true,
     priority: 4,
   },
   copilot: {
     key: "copilot",
     displayName: "Microsoft Copilot",
-    hasLiveProvider: false,
+    hasLiveProvider: true,
     priority: 5,
   },
   ai_overviews: {
     key: "ai_overviews",
     displayName: "Google AI Overviews",
-    hasLiveProvider: false,
+    hasLiveProvider: true,
     priority: 6,
   },
 };

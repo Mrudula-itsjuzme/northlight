@@ -8,12 +8,13 @@ import { VISIBILITY_PLATFORMS } from "@/config/visibility";
 export function getVisibilityAdapter(platform: AiPlatformKey): VisibilityAdapter {
   const mode = getExecutionMode();
   const platformConfig = VISIBILITY_PLATFORMS[platform];
+  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY;
 
   if (platformConfig?.hasLiveProvider) {
-    if (mode === "live" && process.env.OPENAI_API_KEY) {
-      return createOpenAiVisibilityAdapter();
+    if (mode === "live" && apiKey) {
+      return createOpenAiVisibilityAdapter(platform);
     }
-    if (mode === "live" && !process.env.OPENAI_API_KEY) {
+    if (mode === "live" && !apiKey) {
       return createUnavailableVisibilityAdapter(platform);
     }
     return createDemoVisibilityAdapter(platform);

@@ -1,19 +1,28 @@
 import "server-only";
 import { config } from "@/lib/config";
-import type { VisibilityAdapter, VisibilityCheckResult } from "@/lib/ai/visibility/adapter";
+import type { AiPlatformKey, VisibilityAdapter, VisibilityCheckResult } from "@/lib/ai/visibility/adapter";
 import { parseVisibilityResponse } from "@/lib/ai/visibility/parse";
 
-export function createOpenAiVisibilityAdapter(): VisibilityAdapter {
+const PLATFORM_MODEL_MAP: Record<AiPlatformKey, string> = {
+  chatgpt: "openai/gpt-4o-mini",
+  claude: "anthropic/claude-3.5-sonnet",
+  gemini: "google/gemini-2.0-flash-001",
+  perplexity: "perplexity/sonar",
+  copilot: "openai/gpt-4o",
+  ai_overviews: "google/gemini-2.0-flash-001",
+};
+
+export function createOpenAiVisibilityAdapter(platform: AiPlatformKey = "chatgpt"): VisibilityAdapter {
   return {
-    platform: "chatgpt",
+    platform,
     isDemo: false,
     adapterState: "live",
     async check(prompt: string, brandName: string): Promise<VisibilityCheckResult> {
-      const apiKey = config.openai.apiKey;
+      const apiKey = config.openai.apiKey || process.env.OPENROUTER_API_KEY;
       if (!apiKey) {
-        throw new Error("OPENAI_API_KEY is not configured.");
+        throw new Error("OPENAI_API_KEY or OPENROUTER_API_KEY is not configured.");
       }
-      const model = config.openai.chatModel;
+      const model = PLATFORM_MODEL_MAP[platform] ?? config.openai.chatModel;
       const startTime = Date.now();
 
       const response = await fetch(`${config.openai.apiBaseUrl}${config.openai.chatCompletionsPath}`, {
@@ -21,6 +30,8 @@ export function createOpenAiVisibilityAdapter(): VisibilityAdapter {
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
+          "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+          "X-Title": "Northlight",
         },
         body: JSON.stringify({
           model,
@@ -33,7 +44,7 @@ export function createOpenAiVisibilityAdapter(): VisibilityAdapter {
 
       if (!response.ok) {
         const body = await response.text();
-        throw new Error(`OpenAI chat completion failed (${response.status}): ${body}`);
+        throw new Error(`Live API chat completion failed for platform ${platform} (${response.status}): ${body}`);
       }
 
       const data = (await response.json()) as {
@@ -43,7 +54,7 @@ export function createOpenAiVisibilityAdapter(): VisibilityAdapter {
 
       const parsed = parseVisibilityResponse(rawResponse, brandName);
       return {
-        platform: "chatgpt",
+        platform,
         adapterState: "live",
         mentioned: parsed.mentioned,
         position: parsed.position,
