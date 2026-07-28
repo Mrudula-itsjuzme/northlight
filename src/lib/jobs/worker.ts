@@ -92,43 +92,134 @@ export type ClaimedJob = {
 export async function claimNextJob(workerId = "worker-1"): Promise<ClaimedJob | null> {
   const db = getDb();
 
-  const [claimed] = await db.execute<{
-    id: string;
-    brand_id: string | null;
-    type: JobType;
-    payload: unknown;
-    attempts: number;
-    max_attempts: number;
-  }>(sql`
-    UPDATE jobs
-    SET status = 'running',
-        attempts = attempts + 1,
-        started_at = now(),
-        locked_at = now(),
-        locked_by = ${workerId},
-        last_attempt_at = now()
-    WHERE id = (
-      SELECT id FROM jobs
-      WHERE (status = 'queued' AND run_at <= now())
-         OR (status = 'running' AND locked_at < now() - INTERVAL '5 minutes')
-      ORDER BY run_at ASC
-      LIMIT 1
-      FOR UPDATE SKIP LOCKED
-    )
-    RETURNING id, brand_id, type, payload, attempts, max_attempts
-  `);
+  try {
+    const [claimed] = await db.execute<{
+      id: string;
+      brand_id: string | null;
+      type: JobType;
+      payload: unknown;
+      attempts: number;
+      max_attempts: number;
+    }>(sql`
+      UPDATE jobs
+      SET status = 'running',
+          attempts = attempts + 1,
+          started_at = now(),
+          locked_at = now(),
+          locked_by = ${workerId},
+          last_attempt_at = now()
+      WHERE id = (
+        SELECT id FROM jobs
+        WHERE (status = 'queued' AND run_at <= now())
+           OR (status = 'running' AND locked_at < now() - INTERVAL '5 minutes')
+        ORDER BY run_at ASC
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING id, brand_id, type, payload, attempts, max_attempts
+    `);
 
-  if (!claimed) return null;
+    if (!claimed) return null;
 
-  return {
-    id: claimed.id,
-    brandId: claimed.brand_id,
-    type: claimed.type,
-    payload: claimed.payload,
-    attempts: claimed.attempts,
-    maxAttempts: claimed.max_attempts,
-    lockedBy: workerId,
-  };
+    return {
+      id: claimed.id,
+      brandId: claimed.brand_id,
+      type: claimed.type,
+      payload: claimed.payload,
+      attempts: claimed.attempts,
+      maxAttempts: claimed.max_attempts,
+      lockedBy: workerId,
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    const code = (err as { code?: string })?.code;
+
+    // Handle case where locked_at column doesn't exist on un-migrated Postgres schema instances
+    if (code === "42703" || message.includes("locked_at")) {
+      try {
+        await db.execute(sql`
+          ALTER TABLE jobs ADD COLUMN IF NOT EXISTS locked_at timestamp with time zone;
+          ALTER TABLE jobs ADD COLUMN IF NOT EXISTS locked_by text;
+          ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_attempt_at timestamp with time zone;
+          ALTER TABLE jobs ADD COLUMN IF NOT EXISTS idempotency_key text;
+        `);
+
+        const [claimed] = await db.execute<{
+          id: string;
+          brand_id: string | null;
+          type: JobType;
+          payload: unknown;
+          attempts: number;
+          max_attempts: number;
+        }>(sql`
+          UPDATE jobs
+          SET status = 'running',
+              attempts = attempts + 1,
+              started_at = now(),
+              locked_at = now(),
+              locked_by = ${workerId},
+              last_attempt_at = now()
+          WHERE id = (
+            SELECT id FROM jobs
+            WHERE (status = 'queued' AND run_at <= now())
+               OR (status = 'running' AND locked_at < now() - INTERVAL '5 minutes')
+            ORDER BY run_at ASC
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+          )
+          RETURNING id, brand_id, type, payload, attempts, max_attempts
+        `);
+
+        if (!claimed) return null;
+
+        return {
+          id: claimed.id,
+          brandId: claimed.brand_id,
+          type: claimed.type,
+          payload: claimed.payload,
+          attempts: claimed.attempts,
+          maxAttempts: claimed.max_attempts,
+          lockedBy: workerId,
+        };
+      } catch {
+        // Fallback for un-migrated databases where DDL is restricted
+        const [claimed] = await db.execute<{
+          id: string;
+          brand_id: string | null;
+          type: JobType;
+          payload: unknown;
+          attempts: number;
+          max_attempts: number;
+        }>(sql`
+          UPDATE jobs
+          SET status = 'running',
+              attempts = attempts + 1,
+              started_at = now()
+          WHERE id = (
+            SELECT id FROM jobs
+            WHERE status = 'queued' AND run_at <= now()
+            ORDER BY run_at ASC
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+          )
+          RETURNING id, brand_id, type, payload, attempts, max_attempts
+        `);
+
+        if (!claimed) return null;
+
+        return {
+          id: claimed.id,
+          brandId: claimed.brand_id,
+          type: claimed.type,
+          payload: claimed.payload,
+          attempts: claimed.attempts,
+          maxAttempts: claimed.max_attempts,
+          lockedBy: null,
+        };
+      }
+    }
+    throw err;
+  }
 }
 
 const RETRY_BACKOFF_MS = config.jobs.retryBackoffMs;

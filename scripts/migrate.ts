@@ -8,7 +8,9 @@
  * `supabase db push` if you'd rather apply the Drizzle-generated SQL
  * directly. Either path is documented in DATABASE.md.
  */
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
+dotenv.config();
 import fs from "node:fs";
 import path from "node:path";
 import postgres from "postgres";

@@ -29,7 +29,9 @@
  * at the brand level: re-running deletes and recreates the demo brand by
  * slug, so it's safe to re-seed during development.
  */
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
+dotenv.config();
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { eq, and } from "drizzle-orm";
 import { getDb } from "@/db";
