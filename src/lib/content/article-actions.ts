@@ -8,6 +8,8 @@ import { requireRole, requireRoleOrThrow, RoleError } from "@/lib/brands/require
 import { canPublish, type ClaimForGate } from "@/lib/content/publish-gate";
 import { computeArticleScores } from "@/lib/content/scoring/article-scores";
 import type { ActionResult } from "@/lib/brands/types";
+import { publishArticle as executePublish } from "@/lib/publishing/publish";
+import type { PublishingDestination, PublishOptions, PublishResult } from "@/lib/publishing/types";
 
 function toActionError(err: unknown, fallback: string): ActionResult<never> {
   if (err instanceof RoleError) return { ok: false, error: err.message };
@@ -194,11 +196,17 @@ export async function overrideClaim(
  * Publishes an article: re-checks the real publish gate server-side
  * (never trusts the client's belief that publish is allowed), using the
  * caller's actual role and the article's actual claim rows. Blocks with
- * the gate's own reason message if not allowed. On success, transitions
- * to `published`, sets `published_at`, and records a `publications` row
- * (audit trail of who published and whether it was via an override).
+ * the gate's own reason message if not allowed. On success, calls the
+ * publishing engine (executePublish) to dispatch to the selected adapter
+ * (webhook, demo, custom CMS), sets `published_at`, and records a
+ * `publications` row with audit tracking.
  */
-export async function publishArticle(brandId: string, articleId: string): Promise<ActionResult> {
+export async function publishArticle(
+  brandId: string,
+  articleId: string,
+  destination: PublishingDestination = "demo",
+  options?: PublishOptions,
+): Promise<ActionResult<{ publicationId: string; result: PublishResult }>> {
   const roleResult = await requireRole(brandId, "editor");
   if (!roleResult.ok) {
     return { ok: false, error: roleResult.error };
@@ -230,22 +238,25 @@ export async function publishArticle(brandId: string, articleId: string): Promis
     return { ok: false, error: gateResult.reason };
   }
 
-  await db.transaction(async (tx) => {
-    await tx
-      .update(articles)
-      .set({ status: "published", publishedAt: new Date(), updatedAt: new Date() })
-      .where(eq(articles.id, articleId));
+  const pub = await executePublish(brandId, articleId, destination, options);
 
-    await tx.insert(publications).values({
-      brandId,
-      articleId,
+  await db
+    .update(publications)
+    .set({
       publishedBy: roleResult.userId,
       wasOverride,
-    });
-  });
+    })
+    .where(eq(publications.id, pub.publicationId));
+
+  if (pub.result.syncStatus === "published") {
+    await db
+      .update(articles)
+      .set({ publishedAt: new Date(), updatedAt: new Date() })
+      .where(eq(articles.id, articleId));
+  }
 
   revalidatePath(`/content/${articleId}`);
-  return { ok: true, data: undefined };
+  return { ok: true, data: pub };
 }
 
 export type ArticleWithVersion = {

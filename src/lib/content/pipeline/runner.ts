@@ -22,6 +22,7 @@ import {
   runOutlineStage,
   runWriterStage,
   runEditorStage,
+  runSelfReviewStage,
   runSeoOptimizerStage,
   runFactCheckStage,
   runSchemaGeneratorStage,
@@ -385,8 +386,10 @@ async function runStage(
       return runWriterStage({ brief, outline: outputs.outline });
     case "editor":
       return runEditorStage({ draft: outputs.writer });
+    case "self_review":
+      return runSelfReviewStage({ edited: outputs.editor });
     case "seo_optimizer":
-      return runSeoOptimizerStage({ brief, edited: outputs.editor });
+      return runSeoOptimizerStage({ brief, edited: outputs.self_review });
     case "fact_check":
       return runFactCheckStage({ optimized: outputs.seo_optimizer, research: outputs.research });
     case "schema_generator":

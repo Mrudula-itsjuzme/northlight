@@ -44,6 +44,7 @@ export const pipelineStageEnum = pgEnum("pipeline_stage", [
   "outline",
   "writer",
   "editor",
+  "self_review",
   "seo_optimizer",
   "fact_check",
   "schema_generator",

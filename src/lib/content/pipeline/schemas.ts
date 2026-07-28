@@ -16,6 +16,7 @@ export const pipelineStages = [
   "outline",
   "writer",
   "editor",
+  "self_review",
   "seo_optimizer",
   "fact_check",
   "schema_generator",
@@ -124,11 +125,29 @@ export const editorOutputSchema = z.object({
 export type EditorOutput = z.infer<typeof editorOutputSchema>;
 
 // ---------------------------------------------------------------------------
-// Stage 6: SEO Optimizer
+// Stage 6: Automated Self-Review
+// ---------------------------------------------------------------------------
+export const selfReviewInputSchema = z.object({ edited: editorOutputSchema });
+export type SelfReviewInput = z.infer<typeof selfReviewInputSchema>;
+
+export const selfReviewOutputSchema = z.object({
+  bodyHtml: z.string().min(1),
+  maxSectionSimilarity: z.number(),
+  flaggedSectionsCount: z.number().int().nonnegative(),
+  removedFluffCount: z.number().int().nonnegative(),
+  removedParagraphsCount: z.number().int().nonnegative(),
+  qualityPass: z.boolean(),
+});
+export type SelfReviewOutput = z.infer<typeof selfReviewOutputSchema>;
+
+// ---------------------------------------------------------------------------
+// Stage 7: SEO Optimizer
 // ---------------------------------------------------------------------------
 export const seoOptimizerInputSchema = z.object({
   brief: briefContextSchema,
-  edited: editorOutputSchema,
+  edited: z.object({
+    bodyHtml: z.string().min(1),
+  }),
 });
 export type SeoOptimizerInput = z.infer<typeof seoOptimizerInputSchema>;
 
@@ -141,7 +160,7 @@ export const seoOptimizerOutputSchema = z.object({
 export type SeoOptimizerOutput = z.infer<typeof seoOptimizerOutputSchema>;
 
 // ---------------------------------------------------------------------------
-// Stage 7: Fact Check
+// Stage 8: Fact Check
 // ---------------------------------------------------------------------------
 export const factCheckInputSchema = z.object({
   optimized: seoOptimizerOutputSchema,
@@ -171,7 +190,7 @@ export const factCheckOutputSchema = z.object({
 export type FactCheckOutput = z.infer<typeof factCheckOutputSchema>;
 
 // ---------------------------------------------------------------------------
-// Stage 8: Schema Generator
+// Stage 9: Schema Generator
 // ---------------------------------------------------------------------------
 export const schemaGeneratorInputSchema = z.object({
   brief: briefContextSchema,
@@ -191,6 +210,7 @@ export const STAGE_SCHEMAS = {
   outline: { input: outlineInputSchema, output: outlineOutputSchema },
   writer: { input: writerInputSchema, output: writerOutputSchema },
   editor: { input: editorInputSchema, output: editorOutputSchema },
+  self_review: { input: selfReviewInputSchema, output: selfReviewOutputSchema },
   seo_optimizer: { input: seoOptimizerInputSchema, output: seoOptimizerOutputSchema },
   fact_check: { input: factCheckInputSchema, output: factCheckOutputSchema },
   schema_generator: { input: schemaGeneratorInputSchema, output: schemaGeneratorOutputSchema },
