@@ -11,7 +11,9 @@ import { ensureProfile } from "@/lib/profiles/upsert";
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/onboarding";
+  const rawNext = searchParams.get("next") ?? "/onboarding";
+  const safeNext =
+    rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/onboarding";
 
   if (code) {
     const supabase = createClient();
@@ -22,7 +24,7 @@ export async function GET(request: NextRequest) {
       } catch (profileErr) {
         console.error("[auth callback profile upsert error]:", profileErr);
       }
-      return NextResponse.redirect(`${origin}${next}`);
+      return NextResponse.redirect(`${origin}${safeNext}`);
     }
     return NextResponse.redirect(
       `${origin}/login?error=${encodeURIComponent(error?.message ?? "Authentication failed.")}`,

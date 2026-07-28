@@ -43,6 +43,10 @@ export function getExecutionMode(): ExecutionMode {
   return config.openai.apiKey ? "live" : "demo";
 }
 
+function sanitizeErrorMessage(msg: string): string {
+  return msg.replace(/(sk-[a-zA-Z0-9\-_]{15,}|Bearer\s+[^\s]+)/gi, "[REDACTED]");
+}
+
 function calculateCostCents(
   model: string,
   promptTokens: number,
@@ -178,11 +182,12 @@ export async function executeLlmCall<T>(
       };
     } catch (err) {
       clearTimeout(timeoutId);
-      lastError = err as Error;
+      const rawMessage = err instanceof Error ? err.message : String(err);
+      lastError = new Error(sanitizeErrorMessage(rawMessage));
 
       // Fail fast on schema validation errors or auth errors
       if (
-        lastError.name === "ZodError" ||
+        (err as Error)?.name === "ZodError" ||
         lastError.message.includes("schema") ||
         lastError.message.includes("401") ||
         lastError.message.includes("403")

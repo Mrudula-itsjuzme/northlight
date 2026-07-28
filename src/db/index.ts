@@ -23,7 +23,13 @@ function getClient() {
         "your Supabase Postgres connection string.",
     );
   }
-  _client = postgres(connectionString, { prepare: false });
+  const maxConnections = process.env.NODE_ENV === "production" ? 10 : 5;
+  _client = postgres(connectionString, {
+    prepare: false,
+    max: maxConnections,
+    idle_timeout: 20,
+    connect_timeout: 10,
+  });
   return _client;
 }
 
