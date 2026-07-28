@@ -142,16 +142,19 @@
   .text-gradient-purple {
     background: linear-gradient(135deg, #a78bfa 0%, #c084fc 40%, #38bdf8 100%);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
   }
   .text-gradient-cyan {
     background: linear-gradient(135deg, #38bdf8 0%, #818cf8 50%, #c084fc 100%);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
   }
   .text-gradient-emerald {
     background: linear-gradient(135deg, #34d399 0%, #2dd4bf 50%, #38bdf8 100%);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
   }
 

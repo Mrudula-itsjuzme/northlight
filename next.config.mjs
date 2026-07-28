@@ -45,6 +45,12 @@ const csp = [
 ].join("; ");
 
 const nextConfig = {
+  experimental: {
+    serverComponentsExternalPackages: ["pdf-parse", "pdfjs-dist"],
+    outputFileTracingIncludes: {
+      "/**": ["./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
+    },
+  },
   async headers() {
     return [
       {

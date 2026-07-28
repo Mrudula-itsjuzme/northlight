@@ -1,4 +1,6 @@
 import "server-only";
+import * as fs from "fs";
+import * as path from "path";
 import * as mammoth from "mammoth";
 
 export type ExtractableSourceType = "txt" | "csv" | "pdf" | "docx";
@@ -63,10 +65,19 @@ export async function extractText(
       ensureNodeDomPolyfills();
       const { PDFParse } = await import("pdf-parse");
       try {
-        const workerPath = require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
-        PDFParse.setWorker(workerPath);
+        const cwdWorkerPath = path.join(
+          process.cwd(),
+          "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+        );
+        if (fs.existsSync(cwdWorkerPath)) {
+          PDFParse.setWorker(cwdWorkerPath);
+        } else {
+          const req = typeof eval !== "undefined" ? eval("require") : require;
+          const resolvedPath = req.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
+          PDFParse.setWorker(resolvedPath);
+        }
       } catch {
-        // Fallback for bundlers where require.resolve is unavailable
+        // Fallback for bundlers where worker resolution fails
       }
       const parser = new PDFParse({ data: new Uint8Array(buffer) });
       try {

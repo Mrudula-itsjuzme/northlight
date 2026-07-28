@@ -19,11 +19,17 @@ import {
 } from "@/lib/brand-brain/types";
 import { checkRateLimit } from "@/lib/rate-limit";
 
+import { processDocument } from "@/lib/brand-brain/process-document";
+
 export type { BrandDocumentSummary };
 
 function toActionError(err: unknown, fallback: string): ActionResult<never> {
   if (err instanceof RoleError) return { ok: false, error: err.message };
-  return { ok: false, error: err instanceof Error ? err.message : fallback };
+  const rawMsg = err instanceof Error ? err.message : fallback;
+  if (rawMsg.includes("Failed query:")) {
+    return { ok: false, error: `${fallback} Database operation error.` };
+  }
+  return { ok: false, error: rawMsg };
 }
 
 /**
@@ -87,7 +93,10 @@ export async function uploadBrandDocument(
     }
 
     const db = getDb();
-    const documentId = await db.transaction(async (tx) => {
+    let documentId = "";
+    let jobEnqueued = false;
+
+    await db.transaction(async (tx) => {
       const [doc] = await tx
         .insert(brandDocuments)
         .values({
@@ -100,14 +109,28 @@ export async function uploadBrandDocument(
         })
         .returning({ id: brandDocuments.id });
 
-      await tx.insert(jobs).values({
-        brandId,
-        type: "embed_brand_document",
-        payload: { brandDocumentId: doc.id },
-      });
+      documentId = doc.id;
 
-      return doc.id;
+      try {
+        await tx.insert(jobs).values({
+          brandId,
+          type: "embed_brand_document",
+          payload: { brandDocumentId: doc.id },
+        });
+        jobEnqueued = true;
+      } catch {
+        // Job insert issue (e.g. queue schema/RLS restriction) — fallback to direct processDocument
+        jobEnqueued = false;
+      }
     });
+
+    if (!jobEnqueued && documentId) {
+      try {
+        await processDocument(documentId);
+      } catch {
+        // Document status set to failed in processDocument
+      }
+    }
 
     revalidatePath("/brand-brain");
     return { ok: true, data: { documentId } };
@@ -190,18 +213,32 @@ export async function reindexBrandDocument(
       return { ok: false, error: "Document not found." };
     }
 
+    let jobEnqueued = false;
     await db.transaction(async (tx) => {
       await tx
         .update(brandDocuments)
         .set({ status: "pending", error: null })
         .where(eq(brandDocuments.id, documentId));
 
-      await tx.insert(jobs).values({
-        brandId,
-        type: "embed_brand_document",
-        payload: { brandDocumentId: documentId },
-      });
+      try {
+        await tx.insert(jobs).values({
+          brandId,
+          type: "embed_brand_document",
+          payload: { brandDocumentId: documentId },
+        });
+        jobEnqueued = true;
+      } catch {
+        jobEnqueued = false;
+      }
     });
+
+    if (!jobEnqueued) {
+      try {
+        await processDocument(documentId);
+      } catch {
+        // Document status set to failed in processDocument
+      }
+    }
 
     revalidatePath("/brand-brain");
     return { ok: true, data: undefined };
