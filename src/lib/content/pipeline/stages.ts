@@ -18,7 +18,6 @@ import {
   editorOutputSchema,
   type SelfReviewInput,
   type SelfReviewOutput,
-  selfReviewOutputSchema,
   type SeoOptimizerInput,
   type SeoOptimizerOutput,
   seoOptimizerOutputSchema,
@@ -30,6 +29,7 @@ import {
   schemaGeneratorOutputSchema,
 } from "@/lib/content/pipeline/schemas";
 import { auditContentQuality, autoCleanHtml } from "@/lib/content/self-review";
+import { config } from "@/lib/config";
 
 export type StageResult<T> = {
   output: T;
@@ -50,6 +50,41 @@ function slugify(text: string): string {
 
 function capitalize(text: string): string {
   return text.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * Truncate to `max` characters without cutting a word in half, trimming any
+ * trailing punctuation left behind by the cut.
+ */
+function truncateOnWord(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  // If there is no space to break on, a hard cut is the only option.
+  const base = lastSpace > 0 ? cut.slice(0, lastSpace) : cut;
+  return base.replace(/[\s,;:|\-–—]+$/, "");
+}
+
+/**
+ * Build a meta title that fits within `max` characters while preserving the two
+ * parts that carry SEO value: the primary keyword (which must remain intact for
+ * computeSeoScore's keyword-in-title check) and, budget permitting, the brand.
+ *
+ * Degrades in priority order: full title -> keyword + brand -> keyword alone ->
+ * hard-truncated keyword. The keyword is never truncated unless it alone
+ * exceeds the limit, because truncating it would silently cost a second scoring
+ * check on top of the length one.
+ */
+function fitMetaTitle(keyword: string, brandName: string, max: number): string {
+  const full = `${keyword}: Strategic & Technical Guide | ${brandName}`;
+  if (full.length <= max) return full;
+
+  const withBrand = `${keyword} | ${brandName}`;
+  if (withBrand.length <= max) return withBrand;
+
+  if (keyword.length <= max) return keyword;
+
+  return truncateOnWord(keyword, max);
 }
 
 export async function runResearchStage(
@@ -292,14 +327,26 @@ export async function runSeoOptimizerStage(
   const { primaryKeyword, brandName } = input.brief;
 
   const fallbackGenerator = (): SeoOptimizerOutput => {
-    const metaTitle = `${capitalize(primaryKeyword)}: Strategic & Technical Guide | ${brandName}`.slice(0, 70);
-    const metaDescription = `Discover empirical benchmarks, step-by-step workflows, and real-world examples for ${primaryKeyword} from ${brandName}.`.slice(0, 160);
+    // Build within the limits computeSeoScore actually enforces (config.scoring
+    // .article.*, documented in AI_SCORING.md). Previously this truncated to a
+    // hardcoded 70/160, which exceeded the scorer's 60/155 thresholds, so every
+    // generated article lost the meta-title point and scored 80 instead of 100
+    // against metadata this same pipeline produced.
+    const metaTitle = fitMetaTitle(
+      capitalize(primaryKeyword),
+      brandName,
+      config.scoring.article.maxMetaTitleChars,
+    );
+    const metaDescription = truncateOnWord(
+      `Discover empirical benchmarks, step-by-step workflows, and real-world examples for ${primaryKeyword} from ${brandName}.`,
+      config.scoring.article.maxMetaDescChars,
+    );
     const slug = slugify(primaryKeyword);
     return { bodyHtml: input.edited.bodyHtml, metaTitle, metaDescription, slug };
   };
 
   const llmRes = await executeLlmCall({
-    systemPrompt: "You are an SEO optimization specialist. Produce optimized metaTitle (<=70 chars), metaDescription (<=160 chars), and clean slug without altering body content structure.",
+    systemPrompt: `You are an SEO optimization specialist. Produce optimized metaTitle (<=${config.scoring.article.maxMetaTitleChars} chars), metaDescription (<=${config.scoring.article.maxMetaDescChars} chars), and clean slug without altering body content structure. The metaTitle must contain the primary keyword verbatim.`,
     userPrompt: `Brand: ${brandName}\nPrimary Keyword: ${primaryKeyword}\nBody HTML snippet:\n${input.edited.bodyHtml.slice(0, 300)}`,
     schema: seoOptimizerOutputSchema,
     promptVersion: "3.0",

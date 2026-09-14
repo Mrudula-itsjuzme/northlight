@@ -7,6 +7,7 @@ import {
   runOutlineStage,
   runWriterStage,
   runEditorStage,
+  runSelfReviewStage,
   runSeoOptimizerStage,
   runFactCheckStage,
   runSchemaGeneratorStage,
@@ -78,7 +79,8 @@ describe("content pipeline persistence (pglite)", () => {
     const outline = await runOutlineStage({ brief, strategy: strategy.output });
     const writer = await runWriterStage({ brief, outline: outline.output });
     const editor = await runEditorStage({ draft: writer.output });
-    const seo = await runSeoOptimizerStage({ brief, edited: editor.output });
+    const selfReview = await runSelfReviewStage({ edited: editor.output });
+    const seo = await runSeoOptimizerStage({ brief, edited: selfReview.output });
     const factCheck = await runFactCheckStage({ optimized: seo.output, research: research.output });
     const schema = await runSchemaGeneratorStage({ brief, optimized: seo.output });
 
@@ -88,6 +90,7 @@ describe("content pipeline persistence (pglite)", () => {
       { stage: "outline", result: outline },
       { stage: "writer", result: writer },
       { stage: "editor", result: editor },
+      { stage: "self_review", result: selfReview },
       { stage: "seo_optimizer", result: seo },
       { stage: "fact_check", result: factCheck },
       { stage: "schema_generator", result: schema },

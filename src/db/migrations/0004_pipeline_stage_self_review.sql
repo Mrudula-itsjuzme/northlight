@@ -1,0 +1,14 @@
+-- Add the missing 'self_review' value to the pipeline_stage enum.
+--
+-- src/db/schema/enums.ts, src/lib/content/pipeline/schemas.ts (pipelineStages)
+-- and src/lib/content/pipeline/runner.ts all declare and execute a
+-- 'self_review' stage, but migration 0000 created the Postgres enum with only
+-- eight values and no later migration added it. Persisting that stage's step
+-- row therefore failed at runtime with:
+--
+--   invalid input value for enum pipeline_stage: "self_review"
+--
+-- BEFORE is placed so the enum's logical order matches the execution order in
+-- runner.ts (editor -> self_review -> seo_optimizer), which keeps ORDER BY on
+-- the column meaningful.
+ALTER TYPE "public"."pipeline_stage" ADD VALUE IF NOT EXISTS 'self_review' BEFORE 'seo_optimizer';
