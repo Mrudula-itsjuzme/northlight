@@ -1,3 +1,6 @@
+// Keep server-side auth and Postgres calls close to Supabase (Sydney).
+export const preferredRegion = "syd1";
+
 import Link from "next/link";
 import { Sparkles, ShieldCheck } from "lucide-react";
 
