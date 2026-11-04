@@ -43,6 +43,7 @@ import {
 import { resolveModelRouting } from "@/lib/ai/cost-optimizer";
 import { evaluateAndPersistContent } from "@/lib/evaluations/engine";
 import { logOperationalEvent, classifyError } from "@/lib/diagnostics/logging";
+import { notifyPowerAutomateReview } from "@/lib/integrations/power-automate";
 
 export async function runPipeline(
   runId: string,
@@ -210,6 +211,26 @@ export async function runPipeline(
       .update(contentPipelineRuns)
       .set({ status: "completed", articleId, currentStage: null, updatedAt: new Date() })
       .where(eq(contentPipelineRuns.id, runId));
+
+    // Advisory notification only. A failed Microsoft flow must never change
+    // the completed run or bypass Northlight's review/publishing gates.
+    const notification = await notifyPowerAutomateReview({
+      eventId: runId,
+      eventType: "content.ready_for_review",
+      brandId: run.brandId,
+      articleId,
+      title: brief.title,
+      occurredAt: new Date().toISOString(),
+    });
+    if (notification.status === "failed") {
+      logOperationalEvent({
+        category: "retryable",
+        severity: "warn",
+        subsystem: "power_automate_review_notification",
+        brandId: run.brandId,
+        message: `Optional review notification failed: ${notification.reason}`,
+      });
+    }
 
     return { status: "completed", articleId };
   } catch (err) {
