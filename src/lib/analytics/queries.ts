@@ -140,21 +140,6 @@ export async function getAnalyticsSnapshot(brandId: string): Promise<ActionResul
       briefKeywordIds.map((b) => b.keywordId).filter((id): id is string => id !== null),
     );
 
-    const visibilityRows = await db
-      .select({
-        platformKey: aiPlatforms.key,
-        mentioned: aiVisibilitySnapshots.mentioned,
-        createdAt: aiVisibilitySnapshots.createdAt,
-      })
-      .from(aiVisibilitySnapshots)
-      .innerJoin(aiPlatforms, eq(aiVisibilitySnapshots.platformId, aiPlatforms.id))
-      .where(eq(aiVisibilitySnapshots.brandId, brandId));
-
-    const recommendationRows = await db
-      .select({ id: recommendations.id, status: recommendations.status })
-      .from(recommendations)
-      .where(eq(recommendations.brandId, brandId));
-
     const totalMentioned = visibilityRows.filter((v) => v.mentioned).length;
 
     const keywordsWithCoverage = keywordRows.map((k) => ({
