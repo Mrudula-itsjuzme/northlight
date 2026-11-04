@@ -36,7 +36,6 @@ const tooltipStyle = {
   border: "1px solid rgba(255,255,255,.16)",
   borderRadius: 12, color: "#f8fafc", fontSize: 12,
 };
-const COLORS = ["#94a3b8", "#f59e0b", "#8b5cf6", "#10b981"];
 
 function EmptyChart({ type }: { type: "activity" | "status" }) {
   return (
