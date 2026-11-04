@@ -7,6 +7,7 @@ import { requireRoleOrThrow } from "@/lib/brands/require-role";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { DataBadge } from "@/components/ui/data-badge";
 import { BarChart3, FileCheck, ExternalLink, Workflow, Download } from "lucide-react";
+import { OperationsVisuals } from "./operations-visuals";
 
 export const dynamic = "force-dynamic";
 export const preferredRegion = "syd1";
@@ -28,7 +29,7 @@ export default async function IntegrationsPage() {
       aiReadinessScore: articles.aiReadinessScore,
       createdAt: articles.createdAt,
     }).from(articles).where(eq(articles.brandId, brandId)).orderBy(desc(articles.createdAt)).limit(30),
-    db.select({ id: contentPipelineRuns.id, status: contentPipelineRuns.status, totalCostCents: contentPipelineRuns.totalCostCents })
+    db.select({ id: contentPipelineRuns.id, status: contentPipelineRuns.status, createdAt: contentPipelineRuns.createdAt, totalCostCents: contentPipelineRuns.totalCostCents })
       .from(contentPipelineRuns).where(eq(contentPipelineRuns.brandId, brandId)).orderBy(desc(contentPipelineRuns.createdAt)).limit(100),
   ]);
   const brand = brandRows[0];
@@ -37,6 +38,33 @@ export default async function IntegrationsPage() {
   const published = reviewArticles.filter(a => a.status === "published").length;
   const completedRuns = recentRuns.filter(r => r.status === "completed").length;
   const automationsConfigured = Boolean(process.env.POWER_AUTOMATE_REVIEW_WEBHOOK_URL);
+  // UTC daily buckets are computed only from tenant-scoped recent records.
+  // All counts are intentionally scoped to the visible query windows.
+  const today = new Date();
+  const dayStarts = Array.from({ length: 7 }, (_, index) => {
+    const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 6 + index));
+    return d.toISOString().slice(0, 10);
+  });
+  const withinDay = (timestamp: Date, key: string) => timestamp.toISOString().startsWith(key);
+  const chartData = {
+    statuses: [
+      { name: "Draft", count: reviewArticles.filter(a => a.status === "draft").length },
+      { name: "Review", count: pending },
+      { name: "Approved", count: reviewArticles.filter(a => a.status === "approved").length },
+      { name: "Published", count: published },
+    ],
+    activity: dayStarts.map(key => ({
+      day: new Date(`${key}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }),
+      runs: recentRuns.filter(r => withinDay(r.createdAt, key)).length,
+      articles: reviewArticles.filter(a => withinDay(a.createdAt, key)).length,
+    })),
+    stages: [
+      { name: "Completed", count: completedRuns },
+      { name: "Running", count: recentRuns.filter(r => r.status === "running").length },
+      { name: "Pending", count: recentRuns.filter(r => r.status === "pending").length },
+      { name: "Failed", count: recentRuns.filter(r => r.status === "failed").length },
+    ],
+  };
 
   return (
     <div className="space-y-6">
@@ -62,6 +90,7 @@ export default async function IntegrationsPage() {
           </div>
         ))}
       </div>
+      <OperationsVisuals live={chartData} />
       <div className="grid gap-4 lg:grid-cols-3">
         <Card glass>
           <CardHeader>
