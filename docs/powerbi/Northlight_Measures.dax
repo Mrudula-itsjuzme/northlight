@@ -31,17 +31,17 @@ DIVIDE(
 
 Tokens Used = SUM(PipelineRuns[total_tokens])
 
-Articles = COUNTROWS(Articles)
+Article Count = COUNTROWS(Articles)
 
 Published Articles =
 CALCULATE(
-    [Articles],
+    [Article Count],
     Articles[status] = "published"
 )
 
 Review Backlog =
 CALCULATE(
-    [Articles],
+    [Article Count],
     Articles[status] = "review"
 )
 
