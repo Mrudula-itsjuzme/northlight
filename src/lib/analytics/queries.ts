@@ -90,14 +90,20 @@ export async function getAnalyticsSnapshot(brandId: string): Promise<ActionResul
     await requireRoleOrThrow(brandId, "viewer");
     const db = getDb();
 
-    const [brandRow] = await db
-      .select({ isDemo: brands.isDemo })
-      .from(brands)
-      .where(eq(brands.id, brandId))
-      .limit(1);
-
-    const articleRows = await db
-      .select({
+    // Independent tenant-scoped reads can run concurrently. Previously these
+    // seven round trips were sequential, amplifying cross-region latency.
+    const [
+      brandRows,
+      articleRows,
+      runRows,
+      keywordRows,
+      briefKeywordIds,
+      visibilityRows,
+      recommendationRows,
+    ] = await Promise.all([
+      db.select({ isDemo: brands.isDemo }).from(brands)
+        .where(eq(brands.id, brandId)).limit(1),
+      db.select({
         id: articles.id,
         status: articles.status,
         createdAt: articles.createdAt,
@@ -105,49 +111,34 @@ export async function getAnalyticsSnapshot(brandId: string): Promise<ActionResul
         seoScore: articles.seoScore,
         eeatScore: articles.eeatScore,
         aiReadinessScore: articles.aiReadinessScore,
-      })
-      .from(articles)
-      .where(eq(articles.brandId, brandId));
-
-    const runRows = await db
-      .select({
+      }).from(articles).where(eq(articles.brandId, brandId)),
+      db.select({
         id: contentPipelineRuns.id,
         status: contentPipelineRuns.status,
         totalCostCents: contentPipelineRuns.totalCostCents,
         totalTokens: contentPipelineRuns.totalTokens,
         createdAt: contentPipelineRuns.createdAt,
         updatedAt: contentPipelineRuns.updatedAt,
-      })
-      .from(contentPipelineRuns)
-      .where(eq(contentPipelineRuns.brandId, brandId));
-
-    const keywordRows = await db
-      .select({ id: keywords.id, priorityScore: keywords.priorityScore })
-      .from(keywords)
-      .where(eq(keywords.brandId, brandId));
-
-    const briefKeywordIds = await db
-      .select({ keywordId: contentBriefs.keywordId })
-      .from(contentBriefs)
-      .where(eq(contentBriefs.brandId, brandId));
-    const coveredKeywordIds = new Set(
-      briefKeywordIds.map((b) => b.keywordId).filter((id): id is string => id !== null),
-    );
-
-    const visibilityRows = await db
-      .select({
+      }).from(contentPipelineRuns).where(eq(contentPipelineRuns.brandId, brandId)),
+      db.select({ id: keywords.id, priorityScore: keywords.priorityScore })
+        .from(keywords).where(eq(keywords.brandId, brandId)),
+      db.select({ keywordId: contentBriefs.keywordId })
+        .from(contentBriefs).where(eq(contentBriefs.brandId, brandId)),
+      db.select({
         platformKey: aiPlatforms.key,
         mentioned: aiVisibilitySnapshots.mentioned,
         createdAt: aiVisibilitySnapshots.createdAt,
-      })
-      .from(aiVisibilitySnapshots)
-      .innerJoin(aiPlatforms, eq(aiVisibilitySnapshots.platformId, aiPlatforms.id))
-      .where(eq(aiVisibilitySnapshots.brandId, brandId));
+      }).from(aiVisibilitySnapshots)
+        .innerJoin(aiPlatforms, eq(aiVisibilitySnapshots.platformId, aiPlatforms.id))
+        .where(eq(aiVisibilitySnapshots.brandId, brandId)),
+      db.select({ id: recommendations.id, status: recommendations.status })
+        .from(recommendations).where(eq(recommendations.brandId, brandId)),
+    ]);
+    const brandRow = brandRows[0];
 
-    const recommendationRows = await db
-      .select({ id: recommendations.id, status: recommendations.status })
-      .from(recommendations)
-      .where(eq(recommendations.brandId, brandId));
+    const coveredKeywordIds = new Set(
+      briefKeywordIds.map((b) => b.keywordId).filter((id): id is string => id !== null),
+    );
 
     const totalMentioned = visibilityRows.filter((v) => v.mentioned).length;
 

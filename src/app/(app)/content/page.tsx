@@ -17,6 +17,7 @@ import {
   Search,
   CheckCheck,
   Code2,
+  Download,
 } from "lucide-react";
 
 const PIPELINE_STAGES = [
@@ -68,6 +69,37 @@ export default async function ContentPage() {
           </p>
         </div>
       </div>
+
+      {/* Tenant-scoped CSV exports, authenticated by Northlight's server. */}
+      <Card glass>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Download className="h-5 w-5 text-violet-400" /> Power BI Reporting
+          </CardTitle>
+          <CardDescription>
+            Export this brand&apos;s pipeline runs and articles for the Northlight
+            Power BI dashboard. Each file includes a demo-data label.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-3">
+            <a
+              href={`/api/integrations/power-bi/export?brandId=${encodeURIComponent(brandId)}&kind=pipeline`}
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              download="northlight-pipeline.csv"
+            >
+              <Download className="h-4 w-4" /> Download pipeline CSV
+            </a>
+            <a
+              href={`/api/integrations/power-bi/export?brandId=${encodeURIComponent(brandId)}&kind=articles`}
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              download="northlight-articles.csv"
+            >
+              <Download className="h-4 w-4" /> Download articles CSV
+            </a>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* 8-Stage Tracker Showcase Banner */}
       <Card glass className="p-6">
