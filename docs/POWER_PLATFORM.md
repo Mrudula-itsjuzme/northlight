@@ -20,10 +20,12 @@ or credentials are copied into the message. An unset URL disables it.
    authenticated request to publish an article.
 4. Store the signed trigger URL in the **server-only**
    `POWER_AUTOMATE_REVIEW_WEBHOOK_URL` environment variable.
-5. Wire `notifyPowerAutomateReview` to a committed, authenticated
-   article-review event after verifying brand membership and status.
-   **This hook is not currently called by the application**, and a
-   durable delivery/outbox implementation is needed for production.
+5. Northlight calls `notifyPowerAutomateReview` after a content pipeline
+   successfully creates an article. This sends a **review notification**,
+   not a publish/approve command. The pipeline stores a completed status
+   before sending, so a notification failure is logged without reverting it.
+   Durable retry/outbox delivery and deduplication are still needed for
+   production; the event ID is the pipeline run ID.
 6. Test with a dummy article, check the status, rotate the signed
    trigger URL if exposed, and never commit it or print it in logs.
 
