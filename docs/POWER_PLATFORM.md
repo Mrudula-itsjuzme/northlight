@@ -42,7 +42,14 @@ review backlog, published content count, and average processing cost.
 Label demo figures clearly. Apply brand membership authorization on
 every export and keep scheduled exports scoped to the requesting tenant.
 
-No Power BI dataset or workspace has been provisioned by this change.
+A tenant-authorized CSV export is now available at
+`/api/integrations/power-bi/export?brandId=<brand-uuid>&kind=pipeline` or
+`&kind=articles`. Sign in to Northlight and download each CSV, then
+import it into Power BI as a local file. Each export is capped at 5,000
+most recent rows, prevents CSV formula injection, has no-store headers,
+and labels seeded demo brands. This is **not a public refresh endpoint**:
+Power BI scheduled refresh will need a separate secure, authorized
+integration. A Power BI dataset/workspace has not been provisioned.
 
 ## Power Apps
 
