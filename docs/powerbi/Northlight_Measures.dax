@@ -1,0 +1,50 @@
+// Create these measures one by one in Power BI Desktop.
+// Expected table names: PipelineRuns and Articles.
+
+Pipeline Runs = COUNTROWS(PipelineRuns)
+
+Completed Runs =
+CALCULATE(
+    [Pipeline Runs],
+    PipelineRuns[status] = "completed"
+)
+
+Failed Runs =
+CALCULATE(
+    [Pipeline Runs],
+    PipelineRuns[status] = "failed"
+)
+
+Completion Rate = DIVIDE([Completed Runs], [Pipeline Runs], 0)
+
+Total Cost (USD) = DIVIDE(SUM(PipelineRuns[cost_cents]), 100, 0)
+
+Average Cost Per Completed Run (USD) =
+DIVIDE(
+    CALCULATE(
+        SUM(PipelineRuns[cost_cents]),
+        PipelineRuns[status] = "completed"
+    ),
+    100 * [Completed Runs],
+    0
+)
+
+Tokens Used = SUM(PipelineRuns[total_tokens])
+
+Articles = COUNTROWS(Articles)
+
+Published Articles =
+CALCULATE(
+    [Articles],
+    Articles[status] = "published"
+)
+
+Review Backlog =
+CALCULATE(
+    [Articles],
+    Articles[status] = "review"
+)
+
+Average SEO Score = AVERAGE(Articles[seo_score])
+
+Average AI Readiness Score = AVERAGE(Articles[ai_readiness_score])
