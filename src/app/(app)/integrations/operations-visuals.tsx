@@ -68,7 +68,7 @@ export function OperationsVisuals({ live }: { live: SeriesData }) {
             <TrendingUp className="h-5 w-5 text-primary"/> Performance at a glance
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            {view === "sample" ? "Illustrative sample data. Not your brand's results." : "Real records for the currently selected brand."}
+            {view === "sample" ? "Illustrative sample data. Not your brand&apos;s results." : "Real records for the currently selected brand."}
           </p>
         </div>
         <div className="inline-flex rounded-xl border border-border/80 bg-card/80 p-1" role="group" aria-label="Chart data mode">
