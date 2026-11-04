@@ -1,3 +1,6 @@
+// Keep server-side auth and Postgres calls close to Supabase (Sydney).
+export const preferredRegion = "syd1";
+
 import { NextRequest, NextResponse } from "next/server";
 import { eq, desc } from "drizzle-orm";
 import { getDb } from "@/db";
