@@ -87,7 +87,7 @@ export function OperationsVisuals({ live }: { live: SeriesData }) {
       {view === "sample" && (
         <div className="flex items-start gap-2 rounded-xl border border-violet-400/40 bg-violet-500/10 px-4 py-3 text-xs text-foreground">
           <CircleHelp className="h-4 w-4 shrink-0 text-violet-500"/>
-          <span><strong>SAMPLE DATA ONLY.</strong> These numbers are fictional and don't belong to {hasLive ? "the selected brand" : "your brand"}.
+          <span><strong>SAMPLE DATA ONLY.</strong> These numbers are fictional and don&apos;t belong to {hasLive ? "the selected brand" : "your brand"}.
             {liveCount === 0 ? " Select Live brand data to see the empty real-data state." : " Switch to Live brand data for actual values."}</span>
         </div>
       )}
