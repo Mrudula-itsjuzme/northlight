@@ -41,14 +41,14 @@ the CSV files as confidential tenant data.
 
 ### Page 1: Operations overview
 - Cards: Pipeline Runs, Completed Runs, Completion Rate, Total Cost (USD),
-  Articles, Published Articles
+  Article Count, Published Articles
 - Stacked bar: PipelineRuns[status] by Pipeline Runs
 - Line chart: PipelineRuns[created_at] (day) by Pipeline Runs
 - Slicers: PipelineRuns[status], PipelineRuns[data_origin]
 
 ### Page 2: Content quality
 - Cards: Average SEO Score, Average AI Readiness Score, Review Backlog
-- Bar: Articles[status] by Articles
+- Bar: Articles[status] by Article Count
 - Table: Articles[title], [status], [seo_score], [ai_readiness_score],
   [published_at]
 - Slicers: Articles[status], Articles[data_origin]
